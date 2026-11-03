@@ -1,0 +1,8 @@
+node_modules/
+*.tgz
+.DS_Store
+.env
+.env.*
+STATUS.md
+probe-models.cjs
+probe-thread.mjs
