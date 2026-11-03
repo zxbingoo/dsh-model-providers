@@ -31,7 +31,8 @@ export async function discoverModels() {
     const models = []; let cursor;
     do {
       const result = await rpc.call('model/list', { includeHidden: false, ...(cursor ? { cursor } : {}) });
-      for (const m of result.data ?? []) models.push({ id: m.model ?? m.id, name: m.displayName ?? m.model ?? m.id });
+      for (const m of result.data ?? []) models.push({ id: m.model ?? m.id, name: m.displayName ?? m.model ?? m.id,
+        ...(m.supportedReasoningEfforts?.length ? { reasoning: { efforts: m.supportedReasoningEfforts.map(e => ({ id: e.reasoningEffort, name: e.reasoningEffort, description: e.description })) } } : {}) });
       cursor = result.nextCursor;
     } while (cursor);
     return models;

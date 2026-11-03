@@ -2,15 +2,29 @@
 
 通过本机 `codex app-server` 的 stdio JSONL 协议，将 Codex CLI 作为 Harness 的模型后端。参考本地 Paseo 的连接和双向 RPC 生命周期方式；并非把 Paseo/Codex 的原生 agent 工具搬进 Harness。
 
+## 0.2.1：Providers 左侧栏配置
+
+左侧栏新增 **Providers** 入口，当前只支持 Codex CLI：
+
+- **启用开关**：保存后停用新的 Codex 请求，其他 provider 不受影响。
+- **默认模型**：下拉选择或填写自定义模型 ID。
+- **推理强度**：跟随 CLI 默认或显式选择强度；会话显式选择优先。
+- **连接检查 / 刷新模型**：通过 CLI 获取模型目录，不读取登录 token。
+- **设为 Harness 默认模型**：显式确认操作后把默认 provider 改为 Codex；现有会话的显式选择不变。
+
+配置使用 Harness 原生 settings / profile patch 持久化，带 revision 冲突检测，不修改 Codex 配置。保存后在会话模型选择器选择 **跟随插件配置**，后续请求就会使用侧栏选择的默认模型。直接选择具体模型的会话仍使用该具体模型。当前工具任务未结束时不要切换模型。
+
+新增客户端入口后需要重启 Harness；没有开发构建监听时，不承诺自动 HMR。停用不会强行中断正在执行的 turn，若停用后仍有工具结果待续接，该次续接会被拒绝。
+
 ## 使用
 
 当前通过 GitHub Release 分发（尚未发布到 npm）。在 Harness 插件管理器中添加以下安装源，或使用命令（将 `<profile>` 替换为目标 profile）：
 
 ```sh
-dsh plugin --profile <profile> add https://github.com/zxbingoo/harness-codex-cli-link/releases/download/v0.1.0/harness-codex-cli-link-0.1.0.tgz
+dsh plugin --profile <profile> add https://github.com/zxbingoo/harness-codex-cli-link/releases/download/v0.2.1/harness-codex-cli-link-0.2.1.tgz
 ```
 
-开发时可使用 `dsh plugin --profile <profile> add link:/absolute/path/to/plugin` 安装本地源码。如界面没有出现提供商，请在没有任务运行时重启 Harness 应用。在会话模型选择器中选择 **Codex CLI** → **gpt-6.1-sol**（或其他目录模型）。插件不会替换现有默认 provider 或模型。
+开发时可使用 `dsh plugin --profile <profile> add link:/absolute/path/to/plugin` 安装本地源码。如界面没有出现提供商，请在没有任务运行时重启 Harness 应用。在会话模型选择器中选择 **Codex CLI** → **gpt-6.1-sol**（或其他目录模型）。插件不会自动替换现有默认 provider 或模型；只有点击 Providers 中的“设为 Harness 默认模型”才会更改全局默认。
 
 需要 `codex-cli 0.166.0`、PATH 中可执行的 Codex，以及 Python 3.11+（仅解析配置的结构，使用 tomllib）。可用 `CODEX_BIN` 指定可执行文件，`CODEX_HOME` 指定 CLI 配置目录。版本固定是为了避免 CLI 新版本增加原生工具后绕过已测试的隔离；更新 CLI 时必须重新验证。
 
@@ -22,7 +36,9 @@ dsh plugin --profile <profile> add https://github.com/zxbingoo/harness-codex-cli
 - 本机真实 dynamic tool 调用 → Harness 返回 HARNESS_TOOL_RESULT_7291 → 原 Codex turn 继续并引用该值。
 - 隔离测试的本地假上游抓包：无工具时 tools=[]；提供一个 Harness 工具时只出现 harness_probe；合成的用户 MCP/notify 未执行。
 - 开发环境中已确认 GUI 模型选择器可见 Codex CLI；真实生成与工具往返通过独立适配器测试验证。
-- 自动化回归测试 23 项通过；仅在 macOS 开发环境完成集成验证，未验证 Windows 或 Linux。
+- 0.2.1 自动化回归测试 30 项通过，包含侧栏交互、配置联动、并发编辑保护和桌面端传输回归检查。
+- 用户已在 macOS 桌面端重启并确认 Providers 配置插件可用；未验证 Windows 或 Linux。
+- 0.2.1 修复根 remote 服务未注入导致的空白页，模型目录使用原生 session remote 通道，兼容桌面端 dsh-app 协议。停用时目录可能为空，启用并保存后再刷新。
 
 ## 边界
 
@@ -35,7 +51,8 @@ dsh plugin --profile <profile> add https://github.com/zxbingoo/harness-codex-cli
 ## 测试
 
 ```sh
-node --test test/*.test.mjs
+npm install
+npm test
 node isolation/test-isolation.mjs
 # 显式授权真实模型用量后，可复现工具往返：
 DSH_CODEX_LIVE_TEST=1 node test-live.mjs
