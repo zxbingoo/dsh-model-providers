@@ -1,7 +1,11 @@
 import { randomUUID, createHash } from 'node:crypto';
 import { CodexRpc } from './rpc.mjs';
+import { assertSupportedMessages, prepareTurnInput, prepareToolOutput } from './images.mjs';
 
-const fingerprint = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
+// Object key order is not semantic; arrays (history and content order) are.
+const canonical = value => Array.isArray(value) ? value.map(canonical)
+  : value && typeof value === 'object' ? Object.fromEntries(Object.keys(value).sort().filter(k => value[k] !== undefined).map(k => [k, canonical(value[k])])) : value;
+const fingerprint = value => createHash('sha256').update(JSON.stringify(canonical(value))).digest('hex');
 const messageValue = m => ({ role: m.role, content: m.content, ...(m.toolCallId === undefined ? {} : { toolCallId: m.toolCallId }), ...(m.isError === undefined ? {} : { isError: m.isError }) });
 const history = options => structuredClone(options.messages.map(messageValue));
 const controls = o => fingerprint({ model: o.model, system: o.system ?? '', tools: o.tools ?? [], reasoningEffort: o.reasoningEffort, temperature: o.temperature, maxTokens: o.maxTokens, stop: o.stop });
@@ -26,16 +30,16 @@ class Queue {
  * resume a suspended turn; no CLI-native tool execution is accepted here.
  */
 export class CodexCliAdapter {
-  constructor({ rpcFactory = opts => new CodexRpc(opts), prepareIsolation, models = [], idleTimeoutMs = 120000, pendingTimeoutMs = idleTimeoutMs } = {}) {
+  constructor({ rpcFactory = opts => new CodexRpc(opts), prepareIsolation, models = [], resolveAttachments, idleTimeoutMs = 120000, pendingTimeoutMs = idleTimeoutMs } = {}) {
     if (typeof prepareIsolation !== 'function') throw new Error('prepareIsolation is required (fail closed)');
-    this.rpcFactory = rpcFactory; this.prepareIsolation = prepareIsolation;
+    this.resolveAttachments = resolveAttachments; this.rpcFactory = rpcFactory; this.prepareIsolation = prepareIsolation;
     for (const timeout of [idleTimeoutMs, pendingTimeoutMs]) if (!Number.isFinite(timeout) || timeout <= 0 || timeout > 2147483647) throw new Error('Timeouts must be positive finite timer durations');
     this.models = models; this.idleTimeoutMs = idleTimeoutMs; this.pendingTimeoutMs = pendingTimeoutMs; this.pending = new Map(); this.active = new Set(); this.closed = false;
   }
   providerInfo(provider) { return { id: provider, name: 'Codex CLI' }; }
   providerRetryPolicy() { return { mode: 'normal', maxRetries: 0, retryableCodes: ['TRANSPORT'], initialDelayMs: 500, maxDelayMs: 1000, jitterRatio: 0 }; }
-  async listModels(provider) { return this.models.map(m => ({ provider, id: m.id, name: m.name ?? m.id, inputModalities: ['text'] })); }
-  async resolveModel(provider, model) { return { provider, id: model, name: this.models.find(m => m.id === model)?.name ?? model, inputModalities: ['text'] }; }
+  async listModels(provider) { return this.models.map(m => ({ ...m, provider, id: m.id, name: m.name ?? m.id })); }
+  async resolveModel(provider, model) { const metadata = this.models.find(m => m.id === model); return { ...metadata, provider, id: model, name: metadata?.name ?? model }; }
   async prepareCall(provider, model, signal) { signal?.throwIfAborted(); return { model: await this.resolveModel(provider, model), stream: options => this.stream(options) }; }
   closeState(state, error = failure('Codex state closed', 'ABORTED')) {
     if (state.closed) return;
@@ -60,8 +64,27 @@ export class CodexCliAdapter {
       && tail.length === 2 && tail[0].role === 'assistant'
       && fingerprint(tail[0].content) === fingerprint(state.emitted)
       && tail[1].role === 'tool' && tail[1].toolCallId === state.callId;
-    if (!valid || state.busy) throw failure('Pending Codex turn does not match session, history, system, tools or model');
-    if (!Array.isArray(tail[1].content) || tail[1].content.some(b => b.type !== 'text' || typeof b.text !== 'string')) throw failure('Codex tool results require text content');
+    if (state.sessionId !== options.sessionId || state.busy) throw failure('Pending Codex turn belongs to another session or is already being resumed');
+    if (!valid) {
+      // Harness may append runtime context/notices, refresh the system prompt or
+      // change the tool registry between steps. Never feed that changed request
+      // into the old turn: rebuild using the current full committed transcript.
+      // Only accept a result for an assistant call we actually emitted.
+      const emittedCall = state.emitted.find(b => b.type === 'tool-call' && b.id === state.callId);
+      const matching = values.flatMap((m, index) => m.role === 'assistant'
+        ? m.content.filter(b => b.type === 'tool-call' && b.id === state.callId).map(block => ({ index, block })) : []);
+      const answers = values.map((m, index) => ({ message: m, index })).filter(v => v.message.role === 'tool' && v.message.toolCallId === state.callId);
+      if (matching.length !== 1 || answers.length !== 1 || matching[0].index >= answers[0].index
+        || fingerprint(matching[0].block) !== fingerprint(emittedCall)) throw failure('Pending Codex tool result does not match the emitted call');
+      const prior = state.history.filter(m => m.role !== 'system');
+      const incoming = values.slice(0, matching[0].index).filter(m => m.role !== 'system');
+      if (incoming.length < prior.length || fingerprint(incoming.slice(0, prior.length)) !== fingerprint(prior)) {
+        throw failure('Pending Codex turn history was rewritten before the emitted call');
+      }
+      this.closeState(state, failure('Harness request context changed; rebuilding from committed history', 'CONTEXT_CHANGED'));
+      return undefined;
+    }
+    assertSupportedMessages([tail[1]]);
     state.busy = true; clearTimeout(state.expiry); this.pending.delete(state.callId);
     return { state, result: tail[1] };
   }
@@ -69,7 +92,11 @@ export class CodexCliAdapter {
     const state = { queue: new Queue(), history: history(options), controls: controls(options), sessionId: options.sessionId, emitted: [], index: 0, text: new Map(), requests: new Set(), busy: true };
     this.active.add(state); onState(state);
     try {
-      const isolation = await this.prepareIsolation(options.model);
+      // Admission must precede RPC/thread allocation so Harness compaction can
+      // recover a long conversation without starting an unusable native turn.
+      const input = await prepareTurnInput(state.history, { resolveAttachments: this.resolveAttachments, signal: options.signal });
+      if (state.closed || this.closed || options.signal?.aborted) throw failure('Codex generation cancelled', 'ABORTED');
+      const isolation = await this.prepareIsolation(options.model, options.codexModelInfo);
       state.cleanup = isolation.cleanup;
       if (state.closed || this.closed || options.signal?.aborted) {
         await state.cleanup?.(); state.cleanup = undefined;
@@ -101,7 +128,7 @@ export class CodexCliAdapter {
       state.threadId = response.thread.id;
       const turn = await state.rpc.call('turn/start', { threadId: state.threadId, model: options.model,
         ...(options.reasoningEffort === undefined ? {} : { effort: options.reasoningEffort }),
-        input: [{ type: 'text', text: JSON.stringify({ format: 'harness-role-tagged-transcript-v1', messages: state.history }) }] });
+        input });
       if (state.closed) throw state.queue.error;
       state.turnId = turn.turn.id;
       return state;
@@ -117,6 +144,7 @@ export class CodexCliAdapter {
     try {
       options.signal?.throwIfAborted();
       if (this.closed) throw failure('Bridge closed', 'ABORTED');
+      assertSupportedMessages(options.messages);
       const continuation = this.findContinuation(options);
       state = continuation?.state;
       options.signal?.addEventListener('abort', abort, { once: true });
@@ -126,7 +154,9 @@ export class CodexCliAdapter {
       options.signal?.throwIfAborted();
       if (continuation) {
         state.history = history(options); state.emitted = []; state.index = 0; state.text.clear();
-        state.resolveTool({ contentItems: continuation.result.content.filter(b => b.type === 'text').map(b => ({ type: 'inputText', text: b.text })), success: !continuation.result.isError });
+        const output = await prepareToolOutput(state.history, state.history.length - 1, { resolveAttachments: this.resolveAttachments, signal: options.signal });
+        if (state.closed) throw failure('Codex generation cancelled', 'ABORTED');
+        state.resolveTool(output);
         state.resolveTool = undefined;
       }
       while (true) {
@@ -174,7 +204,7 @@ export class CodexCliAdapter {
         } else if (method === 'error' && !p.willRetry) throw failure(p.error?.message ?? 'Codex stream failed', 'CODEX_ERROR');
       }
     } catch (error) {
-      yield { type: 'finish', reason: { kind: options.signal?.aborted || error.code === 'ABORTED' ? 'aborted' : 'error', failure: { code: error.code ?? 'TRANSPORT', message: error.message ?? 'Codex bridge failure' } } };
+      yield { type: 'finish', reason: { kind: options.signal?.aborted || error.code === 'ABORTED' ? 'aborted' : 'error', failure: { code: error.code ?? 'TRANSPORT', message: error.message ?? 'Codex bridge failure', ...(error.offloadImages === undefined ? {} : { offloadImages: error.offloadImages }) } } };
     } finally {
       if (!suspended) options.signal?.removeEventListener('abort', abort);
       if (state && !suspended) this.closeState(state);

@@ -24,7 +24,16 @@ export class CodexRpc {
       }
       const item = this.pending.get(message.id); if (!item) return;
       this.pending.delete(message.id); clearTimeout(item.timer);
-      message.error ? item.reject(new Error(`Codex RPC ${item.method} failed (${message.error.code})`)) : item.resolve(message.result);
+      if (message.error) {
+        const { code, message: detail } = message.error;
+        // Preserve the server's diagnostic, but never echo params/error.data: they
+        // can contain full transcripts, image data URLs or provider credentials.
+        const safeDetail = typeof detail === 'string' ? detail.replace(/data:[^\s"']+/gi, '[data omitted]').replace(/\b(?:sk-|Bearer\s+)[A-Za-z0-9._-]+/gi, '[credential omitted]').slice(0, 1000) : '';
+        item.reject(Object.assign(new Error(`Codex RPC ${item.method} failed (${code})${safeDetail ? ': ' + safeDetail : ''}`), {
+          code: /input exceeds the maximum length|context (?:window|length).*(?:exceed|limit)|maximum context length/i.test(safeDetail) ? 'CONTEXT_WINDOW_EXCEEDED'
+            : code === -32602 ? 'INVALID_REQUEST' : 'CODEX_RPC_ERROR', rpcCode: code, rpcMethod: item.method,
+        }));
+      } else item.resolve(message.result);
     };
     this.child.on('error', () => this.fail(new Error('Cannot start Codex CLI')));
     this.child.on('exit', () => this.fail(new Error('Codex CLI stopped')));

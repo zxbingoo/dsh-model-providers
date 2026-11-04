@@ -1,6 +1,7 @@
 {
-  "name": "dsh-codex-cli",
-  "version": "0.2.2",
+  "name": "dsh-model-providers",
+  "version": "0.3.6",
+  "icon": "assets/avatar.png",
   "author": "zxbingoo",
   "repository": {
     "type": "git",
@@ -25,6 +26,9 @@
     ".": "./index.mjs",
     "./client": "./client.js",
     "./bundle.yml": "./bundle.yml",
+    "./assets/avatar-icon.jpg": "./assets/avatar-icon.jpg",
+    "./assets/avatar.png": "./assets/avatar.png",
+    "./assets/sidebar-icon.svg": "./assets/sidebar-icon.svg",
     "./package.json": "./package.json"
   },
   "engines": {
@@ -61,14 +65,23 @@
     "test/*.test.mjs",
     "test-live.mjs",
     "README.md",
+    "RELEASE_NOTES.md",
     "LICENSE",
     "THIRD_PARTY_NOTICES.md",
-    "third-party/*"
+    "third-party/*",
+    "images.mjs",
+    "assets/avatar-icon.jpg",
+    "assets/avatar.png",
+    "assets/sidebar-icon.svg",
+    "scripts/preview-brand.mjs",
+    "scripts/check-icon.mjs"
   ],
   "scripts": {
+    "prepack": "node scripts/check-icon.mjs",
     "test": "node --test test/*.test.mjs",
     "test:live": "node test-live.mjs",
-    "test:isolation": "node isolation/test-isolation.mjs"
+    "test:isolation": "node isolation/test-isolation.mjs",
+    "preview:brand": "node scripts/preview-brand.mjs"
   },
   "license": "MIT",
   "devDependencies": {

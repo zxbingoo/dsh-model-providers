@@ -1,37 +1,73 @@
 import { CodexCliAdapter } from './adapter.mjs';
 import { CodexRpc } from './rpc.mjs';
-import { prepareIsolation, discoverModels } from './runtime.mjs';
-import { CONFIGURED_MODEL, currentConfig, resolveOptions, createModelDirectory } from './controller.mjs';
+import { prepareIsolation, discoverModels, getDiscoveryFingerprint } from './runtime.mjs';
+import { imageRequestTarget } from './images.mjs';
+import { currentConfig, resolveModelId, modelChoices, resolveOptions, migrateDefaultSelection, createModelDirectory } from './controller.mjs';
 export { Config } from './config.mjs';
 
-export const name = 'dsh-codex-cli';
+export const name = 'dsh-model-providers';
 export const inject = ['llm'];
-export function apply(ctx, config = {}) {
-  const ns = ctx.fiber?.entry?.options?.id ?? name;
-  const directory = createModelDirectory(discoverModels);
-  const adapter = new CodexCliAdapter({ prepareIsolation, rpcFactory: options => new CodexRpc({ ...options, binary: process.env.CODEX_BIN || 'codex' }) });
+export function createCodexAdapter(config = {}, {
+  discover = discoverModels, fingerprint = getDiscoveryFingerprint,
+  prepare = prepareIsolation, resolveAttachments,
+  rpcFactory = options => new CodexRpc({ ...options, binary: process.env.CODEX_BIN || 'codex' }),
+} = {}) {
+  const directory = createModelDirectory(discover, 60000, fingerprint);
+  const adapter = new CodexCliAdapter({ prepareIsolation: prepare, resolveAttachments, rpcFactory });
   const originalStream = adapter.stream.bind(adapter);
   adapter.stream = async function* (options) {
-    try { yield* originalStream(resolveOptions(options, config)); }
+    try { const resolved = resolveOptions(options, config);
+      const metadata = (await directory()).find(m => m.id === resolved.model);
+      yield* originalStream({ ...resolved, codexModelInfo: metadata }); }
     catch (error) { yield { type: 'finish', reason: { kind: 'error', failure: { code: error.code ?? 'INVALID_REQUEST', message: error.message } } }; }
   };
   adapter.listModels = async provider => {
-    if (!currentConfig(config).enabled) return [];
-    const models = await directory(); adapter.models = models;
-    return [{ id: CONFIGURED_MODEL, name: `跟随插件配置 · ${currentConfig(config).model}` }, ...models].map(m => ({ ...m, provider, inputModalities: ['text'] }));
+    const c = currentConfig(config);
+    if (!c.enabled) return [];
+    const models = await directory(true); adapter.models = models;
+    return modelChoices(models, c).map(m => ({ ...m, provider }));
   };
   adapter.resolveModel = async (provider, model) => {
     const c = currentConfig(config);
-    const actual = model === CONFIGURED_MODEL ? c.model : model;
+    const actual = resolveModelId(model, c);
     const metadata = c.enabled ? (await directory()).find(m => m.id === actual) : undefined;
-    return { ...metadata, provider, id: model, name: model === CONFIGURED_MODEL ? `跟随插件配置 · ${c.model}` : metadata?.name ?? model, inputModalities: ['text'] };
+    // Retain a legacy requested ID for replay, but label it with the real model.
+    return { ...metadata, provider, id: model?.trim() ? model : actual, name: metadata?.name ?? actual };
+  };
+  adapter.prepareCall = async (provider, model, signal) => {
+    signal?.throwIfAborted();
+    const snapshot = currentConfig(config);
+    const resolved = resolveOptions({ model }, snapshot);
+    const metadata = structuredClone((await directory()).find(m => m.id === resolved.model));
+    signal?.throwIfAborted();
+    return { model: { ...metadata, provider, id: model?.trim() ? model : resolved.model, name: metadata?.name ?? resolved.model },
+      stream: async function* (options) {
+        try {
+          if (!currentConfig(config).enabled) throw Object.assign(new Error('Codex CLI 已停用'), { code: 'CODEX_DISABLED' });
+          yield* originalStream({ ...resolveOptions(options, snapshot), codexModelInfo: metadata });
+        } catch (error) { yield { type: 'finish', reason: { kind: 'error', failure: { code: error.code ?? 'INVALID_REQUEST', message: error.message } } }; }
+      }
+    };
   };
   adapter.imageRequestPricing = () => undefined;
-  adapter.imageRequestTarget = (_provider, _model, image) => ({ width: image.width, height: image.height, maxBytes: image.bytes });
+  adapter.imageRequestTarget = (_provider, _model, image) => imageRequestTarget(image);
+  return { adapter, directory };
+}
+
+export function apply(ctx, config = {}) {
+  const ns = ctx.fiber?.entry?.options?.id ?? name;
+  const { adapter, directory } = createCodexAdapter(config, { resolveAttachments: () => ctx.get?.('attachments') });
   let registration;
   ctx.effect(() => { registration = ctx.llm.registerAdapter(['codex-cli'], adapter); return registration; });
   ctx.on('loader/volatile-update', () => registration?.replace(['codex-cli']));
   ctx.effect(() => () => adapter.close());
+  ctx.inject(['agentDefaultModel'], child => child.effect(() => {
+    let disposed = false;
+    migrateDefaultSelection(child.agentDefaultModel, config).then(changed => {
+      if (changed && !disposed) registration?.replace(['codex-cli']);
+    }).catch(error => { if (!disposed) ctx.logger?.warn?.(`Unable to migrate legacy Codex default: ${error.message}`); });
+    return () => { disposed = true; };
+  }));
   ctx.inject(['settings'], child => child.effect(() => child.settings.configure({ auto: false }, ctx.fiber)));
   ctx.inject(['connection'], child => {
     child.connection.rpc.handle('/harness-codex-cli-link', async (endpoint, payload, signal) => {

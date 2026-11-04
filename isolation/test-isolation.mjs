@@ -9,7 +9,7 @@ import { assertCodexVersion, buildIsolationArgs, constructIsolatedCatalog, PUBLI
 
 assertCodexVersion();
 const root = await mkdtemp(join(tmpdir(), 'dsh-codex-isolation-'));
-const catalog = constructIsolatedCatalog(await (await fetch(PUBLIC_CATALOG_URL)).json(), 'harness-isolation-mock');
+const catalog = constructIsolatedCatalog(JSON.parse(await readFile(new URL('./models.json', import.meta.url), 'utf8')), 'harness-isolation-mock');
 const catalogPath = join(root, 'catalog.json');
 await writeFile(catalogPath, JSON.stringify(catalog));
 const sentinel = join(root, 'UNEXPECTED_SIDE_EFFECT');
@@ -55,15 +55,23 @@ try {
   for (const dynamic of [false, true]) {
     const tools = dynamic ? [{type:'function',name:'harness_probe',description:'Harness owned tool',inputSchema:{type:'object',properties:{},additionalProperties:false}}] : [];
     const r=await call('thread/start',{model:'harness-isolation-mock',ephemeral:true,cwd:root,environments:[],approvalPolicy:'never',sandbox:'read-only',baseInstructions:'HARNESS_BASE_ONLY',developerInstructions:'',dynamicTools:tools});
-    await call('turn/start',{threadId:r.thread.id,input:[{type:'text',text:'Return isolated-ok.'}]});
+    await call('turn/start',{threadId:r.thread.id,input:[{type:'text',text:'Return isolated-ok.'}, {type:'image',url:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEElEQVR4nGP4z8AARAwQCgAf7gP9i18U1AAAAABJRU5ErkJggg=='}]});
     // Each turn has one local mock response. Wait for its terminal notification.
     const deadline=Date.now()+15000;
     while(requests.length < (dynamic?2:1) || completedTurns < (dynamic?2:1)) { await new Promise(resolve=>setTimeout(resolve,20)); if(Date.now()>deadline)throw new Error('No mock inference request'); }
     const request=requests.at(-1);
     assert.deepEqual((request.tools??[]).map(t=>t.name).sort(), dynamic?['harness_probe']:[]);
     assert(JSON.stringify(request).includes('HARNESS_BASE_ONLY'),'Harness base instructions missing');
+    assert(JSON.stringify(request.input).includes('input_image'), `Native image missing from actual upstream request: ${JSON.stringify(request.input)}`);
     await writeFile(join(root, `mock-request-${dynamic?2:1}.json`), JSON.stringify(request,null,2));
   }
+  // Exercise the real CLI's independent aggregate-text bound without sending a
+  // third inference request. Splitting across text items must not bypass it.
+  const limitThread = await call('thread/start', { model: 'harness-isolation-mock', ephemeral: true, cwd: root, environments: [], approvalPolicy: 'never', sandbox: 'read-only', dynamicTools: [] });
+  await assert.rejects(call('turn/start', { threadId: limitThread.thread.id, input: [
+    { type: 'text', text: 'x'.repeat(600000) }, { type: 'text', text: 'y'.repeat(600000) },
+  ] }), /Input exceeds the maximum length of 1048576 characters/);
+  assert.equal(requests.length, 2, 'Rejected oversized input must not reach upstream');
   await Promise.race([done,new Promise((_,reject)=>setTimeout(()=>reject(new Error('Turn completion missing')),10000))]);
   assert(!(await readdir(root)).includes('UNEXPECTED_SIDE_EFFECT'),'Inherited MCP/notify executed');
   console.log(JSON.stringify({ok:true,version:'0.166.0',requests:requests.length,toolSets:requests.map(r=>(r.tools??[]).map(t=>t.name)),noInheritedSideEffects:true,realCredentialsUsed:false,tempDirectory:root},null,2));

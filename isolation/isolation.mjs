@@ -1,7 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtemp, writeFile } from 'node:fs/promises';
-import { tmpdir, homedir } from 'node:os';
-import { join } from 'node:path';
+import { isAbsolute } from 'node:path';
 
 export const CODEX_VERSION = '0.166.0';
 export const PUBLIC_CATALOG_URL = `https://raw.githubusercontent.com/openai/codex/rust-v${CODEX_VERSION}/codex-rs/models-manager/models.json`;
@@ -14,17 +12,40 @@ export function readConfigStructure(configPath) {
   return JSON.parse(p.stdout);
 }
 
-/** Full authoritative static catalog; no credential/cache access or live model discovery. */
-export function constructIsolatedCatalog(publicCatalog, model) {
-  if (!model || !publicCatalog?.models?.length) throw new Error('Model and public catalog required');
+const nonemptyString = value => typeof value === 'string' && value.length > 0;
+const modalitiesKnown = value => Array.isArray(value) && value.every(nonemptyString);
+const NATIVE_INPUT_MODALITIES = new Set(['text', 'image', 'audio']);
+
+/** Execution-only serialization/tool-safety template, NOT a model discovery source.
+ * metadata is a discovered { inputModalities?, reasoning?: { efforts }, defaultReasoningEffort? }.
+ * Only these capability fields are accepted; native tools/instructions are never copied from it.
+ */
+export function constructIsolatedCatalog(publicCatalog, model, metadata) {
+  if (!nonemptyString(model) || !publicCatalog?.models?.length) throw new Error('Model and public catalog required');
+  if (metadata != null && (typeof metadata !== 'object' || Array.isArray(metadata))) throw new Error('Model metadata must be an object');
+  if (nonemptyString(metadata?.id) && metadata.id !== model) throw new Error('Model metadata does not match selected model');
   const template = publicCatalog.models.find(m => m.slug === model) ?? publicCatalog.models[0];
   const entry = structuredClone(template);
+  // The pinned CLI cannot deserialize future modality tags. Keep them in discovery,
+  // but only pass native tags to its execution catalog. [] remains explicitly empty.
+  // Unknown support must not inherit another model's restrictions: text/image here
+  // is a permissive transport fallback, never advertised to Harness as a capability.
+  const inputModalities = modalitiesKnown(metadata?.inputModalities)
+    ? [...new Set(metadata.inputModalities.filter(value => NATIVE_INPUT_MODALITIES.has(value)))]
+    : ['text', 'image'];
+  const efforts = Array.isArray(metadata?.reasoning?.efforts) ? metadata.reasoning.efforts : [];
   Object.assign(entry, {
     slug: model, display_name: model, shell_type: 'disabled', apply_patch_tool_type: null,
     experimental_supported_tools: [], supports_search_tool: false, tool_mode: 'direct',
     multi_agent_version: null, multi_agent_reasoning_effort: null, use_responses_lite: false,
     include_skills_usage_instructions: false, include_plugin_usage_instructions: false,
     include_apps_usage_instructions: false, prefer_websockets: false, node_repl_disabled: true,
+    input_modalities: inputModalities, supports_image_detail_original: false,
+    supported_reasoning_levels: efforts.filter(e => nonemptyString(e?.id)).map(e => ({
+      effort: e.id, description: typeof e.description === 'string' ? e.description : '',
+    })),
+    default_reasoning_level: nonemptyString(metadata?.defaultReasoningEffort) ? metadata.defaultReasoningEffort : null,
+    supports_reasoning_effort_updates: false,
     model_messages: { instructions_template: 'You are a model backend for DeepSeek Harness.' },
   });
   return { models: [entry] };
@@ -32,11 +53,23 @@ export function constructIsolatedCatalog(publicCatalog, model) {
 
 const OFF = ['shell_tool','view_image','code_mode','code_mode_host','code_mode_only','multi_agent','multi_agent_v2','request_permissions_tool','request_permissions','current_time_reminder','sleep_tool','token_budget','tool_suggest','browser_use','browser_use_external','computer_use','image_generation','imagegenext','memories','memory_tool','apps','connectors','plugins','remote_plugin','plugin_hooks','hooks','codex_hooks','skill_search','js_repl','js_repl_tools_only','deferred_executor','send_message_to_user_async','context_management','workspace_dependencies','model_catalog_in_context','shell_snapshot','goals'];
 
-/** Launch-only overrides. Structure must cover every inherited source; no claim of a stable deny-all API. */
+/** Execution must always supply a controlled, sanitized catalog. */
 export function buildIsolationArgs({ catalogPath, structure = {} }) {
-  if (!catalogPath?.startsWith('/')) throw new Error('Absolute controlled catalog path required');
+  if (typeof catalogPath !== 'string' || !isAbsolute(catalogPath)) throw new Error('Absolute controlled catalog path required');
+  return buildLaunchArgs(structure, { model_catalog_json: catalogPath });
+}
+
+/** Read-only model/list startup: retain the CLI's native catalog and provider selection.
+ * No thread/start or turn/start may be used with these arguments.
+ */
+export function buildDiscoveryArgs({ structure = {} } = {}) {
+  return buildLaunchArgs(structure);
+}
+
+/** Launch-only overrides. Structure must cover every inherited source; no claim of a stable deny-all API. */
+function buildLaunchArgs(structure, catalogOverride = {}) {
   const values = {
-    model_catalog_json: catalogPath, web_search: 'disabled', notify: [],
+    ...catalogOverride, web_search: 'disabled', notify: [],
     include_apps_instructions: false, include_collaboration_mode_instructions: false,
     include_permissions_instructions: false, include_environment_context: false,
     include_environment_context_time: false, project_doc_max_bytes: 0,

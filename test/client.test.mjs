@@ -49,7 +49,11 @@ test('sidebar panel reads persistent settings, saves switch/model and sets Harne
     await act(async () => { button('保存配置').click(); });
     assert.equal(writes[0].value.model, 'custom-model'); assert.equal(writes[0].revision, 'r1');
     await act(async () => { button('设为 Harness 默认模型').click(); });
-    assert.equal(writes[1].ns, 'agent-default-model'); assert.equal(writes[1].value.model, 'configured');
+    assert.equal(writes[1].ns, 'agent-default-model'); assert.equal(writes[1].value.model, 'custom-model');
+    assert.equal(writes[1].value.provider, 'codex-cli');
+    assert.equal(writes[1].revision, 'd1');
+    assert.doesNotMatch(document.body.textContent, /跟随插件配置/);
+    assert.match(document.body.textContent, /未指定模型时使用/);
     await act(async () => { document.querySelector('[role=switch]').click(); });
     await act(async () => { button('保存配置').click(); });
     assert.equal(writes[2].value.enabled, false);

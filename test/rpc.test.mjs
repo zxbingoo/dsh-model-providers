@@ -30,6 +30,24 @@ test('unexpected process exit rejects outstanding requests and reports closure',
   try { await assert.rejects(rpc.call('model/list', {}, 1000), /stopped/); assert.equal(closed, true); }
   finally { rpc.close(); await f.cleanup(); }
 });
+test('RPC input length rejection signals host compaction and retains bounded diagnostics', async () => {
+  const f = await fixture(`require('node:readline').createInterface({input:process.stdin}).on('line',l=>{const m=JSON.parse(l);console.log(JSON.stringify({id:m.id,error:{code:-32602,message:'Input exceeds the maximum length of 1048576 characters.',data:{private:'DO_NOT_EXPOSE'}}}));});`);
+  const rpc = new CodexRpc({ binary: f.binary });
+  try { await assert.rejects(rpc.call('turn/start', {}), e => {
+    assert.equal(e.code, 'CONTEXT_WINDOW_EXCEEDED'); assert.equal(e.rpcCode, -32602);
+    assert.match(e.message, /1048576 characters/); assert.doesNotMatch(JSON.stringify(e), /DO_NOT_EXPOSE/); return true;
+  }); } finally { rpc.close(); await f.cleanup(); }
+});
+
+test('other invalid params are not mistaken for context limits or transport failure', async () => {
+  const f = await fixture(`require('node:readline').createInterface({input:process.stdin}).on('line',l=>{const m=JSON.parse(l);console.log(JSON.stringify({id:m.id,error:{code:-32602,message:'Invalid effort sk-secret123 data:image/png;base64,PRIVATE '+ 'x'.repeat(2000)}}));});`);
+  const rpc = new CodexRpc({ binary: f.binary });
+  try { await assert.rejects(rpc.call('turn/start', {}), e => {
+    assert.equal(e.code, 'INVALID_REQUEST'); assert.match(e.message, /Invalid effort/);
+    assert.doesNotMatch(e.message, /sk-secret123|PRIVATE/); assert(e.message.length < 1100); return true;
+  }); } finally { rpc.close(); await f.cleanup(); }
+});
+
 test('unapproved server requests are denied, never executed', async () => {
   const f = await fixture(`console.log(JSON.stringify({id:42,method:'item/commandExecution/requestApproval',params:{}}));require('node:readline').createInterface({input:process.stdin}).on('line',l=>{const m=JSON.parse(l);if(m.id===42&&m.error)console.log(JSON.stringify({method:'denied',params:{code:m.error.code}}));});`);
   let resolve; const denied = new Promise(r => { resolve = r; });
