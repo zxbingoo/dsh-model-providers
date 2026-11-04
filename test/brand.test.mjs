@@ -12,13 +12,8 @@ import { JSDOM } from 'jsdom';
 
 test('package metadata and published documentation use the canonical project identity', async () => {
   const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
-  const lock = JSON.parse(await readFile(new URL('../package-lock.json', import.meta.url), 'utf8'));
   const repository = 'https://github.com/zxbingoo/dsh-model-providers';
   assert.equal(pkg.name, 'dsh-model-providers');
-  assert.equal(lock.name, pkg.name);
-  assert.equal(lock.packages[''].name, pkg.name);
-  assert.equal(lock.version, pkg.version);
-  assert.equal(lock.packages[''].version, pkg.version);
   assert.equal(pkg.repository.url, 'git+' + repository + '.git');
   assert.equal(pkg.homepage, repository + '#readme');
   assert.equal(pkg.bugs.url, repository + '/issues');
@@ -32,6 +27,23 @@ test('package metadata and published documentation use the canonical project ide
     }
     assert.doesNotMatch(text, /包名由|仓库地址不变|开发迭代记录|源码目录暂保留/u, name);
   }
+});
+
+test('source lockfile matches the package identity and version', async t => {
+  let text;
+  try {
+    text = await readFile(new URL('../package-lock.json', import.meta.url), 'utf8');
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+    t.skip('npm excludes package-lock.json from published archives');
+    return;
+  }
+  const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
+  const lock = JSON.parse(text);
+  assert.equal(lock.name, pkg.name);
+  assert.equal(lock.packages[''].name, pkg.name);
+  assert.equal(lock.version, pkg.version);
+  assert.equal(lock.packages[''].version, pkg.version);
 });
 
 async function sidebarSvg() {
