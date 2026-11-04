@@ -10,6 +10,30 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { JSDOM } from 'jsdom';
 
+test('package metadata and published documentation use the canonical project identity', async () => {
+  const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
+  const lock = JSON.parse(await readFile(new URL('../package-lock.json', import.meta.url), 'utf8'));
+  const repository = 'https://github.com/zxbingoo/dsh-model-providers';
+  assert.equal(pkg.name, 'dsh-model-providers');
+  assert.equal(lock.name, pkg.name);
+  assert.equal(lock.packages[''].name, pkg.name);
+  assert.equal(lock.version, pkg.version);
+  assert.equal(lock.packages[''].version, pkg.version);
+  assert.equal(pkg.repository.url, 'git+' + repository + '.git');
+  assert.equal(pkg.homepage, repository + '#readme');
+  assert.equal(pkg.bugs.url, repository + '/issues');
+  const archive = `${repository}/releases/download/v${pkg.version}/${pkg.name}-${pkg.version}.tgz`;
+  for (const name of ['README.md', 'RELEASE_NOTES.md']) {
+    const text = await readFile(new URL('../' + name, import.meta.url), 'utf8');
+    assert.match(text, /^# dsh-model-providers(?: v\d+\.\d+\.\d+)?\n/u, name);
+    assert(text.includes(archive), `${name}: installation URL must match the package version`);
+    for (const match of text.matchAll(/https:\/\/github\.com\/zxbingoo\/([^\s/)#]+)/gu)) {
+      assert.equal(match[1], pkg.name, `${name}: repository link must use the canonical name`);
+    }
+    assert.doesNotMatch(text, /包名由|仓库地址不变|开发迭代记录|源码目录暂保留/u, name);
+  }
+});
+
 async function sidebarSvg() {
   let plugin;
   const registrations = [];

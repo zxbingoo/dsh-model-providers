@@ -1,15 +1,15 @@
 {
   "name": "dsh-model-providers",
-  "version": "0.3.6",
+  "version": "0.3.7",
   "icon": "assets/avatar.png",
   "author": "zxbingoo",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/zxbingoo/dsh-codex-cli.git"
+    "url": "git+https://github.com/zxbingoo/dsh-model-providers.git"
   },
-  "homepage": "https://github.com/zxbingoo/dsh-codex-cli#readme",
+  "homepage": "https://github.com/zxbingoo/dsh-model-providers#readme",
   "bugs": {
-    "url": "https://github.com/zxbingoo/dsh-codex-cli/issues"
+    "url": "https://github.com/zxbingoo/dsh-model-providers/issues"
   },
   "description": "Connect DeepSeek Harness to Codex CLI using its existing configuration and authentication, with Harness-owned tools.",
   "keywords": [
