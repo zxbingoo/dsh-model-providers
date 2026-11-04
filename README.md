@@ -1,10 +1,14 @@
-# harness-codex-cli-link
+# dsh-codex-cli
 
 通过本机 `codex app-server` 的 stdio JSONL 协议，将 Codex CLI 作为 Harness 的模型后端。参考本地 Paseo 的连接和双向 RPC 生命周期方式；并非把 Paseo/Codex 的原生 agent 工具搬进 Harness。
 
 ## 0.2.1：Providers 左侧栏配置
 
-左侧栏新增 **Providers** 入口，当前只支持 Codex CLI：
+左侧栏 **Providers** 入口集中管理提供商配置。已接入 Codex CLI，界面通过提供商注册表与独立配置组件组织，便于后续扩展其他 CLI。
+
+本地 0.2.2 界面迭代参考 Paseo 的紧凑提供商行：显示名称、状态、模型数量与开关，点击“配置”展开设置；自定义模型 ID 收入高级选项。不展示未实现的 Claude 连接或占位开关。已发布的 GitHub 安装包仍为下方的 0.2.1。
+
+配置功能：
 
 - **启用开关**：保存后停用新的 Codex 请求，其他 provider 不受影响。
 - **默认模型**：下拉选择或填写自定义模型 ID。
@@ -21,7 +25,7 @@
 当前通过 GitHub Release 分发（尚未发布到 npm）。在 Harness 插件管理器中添加以下安装源，或使用命令（将 `<profile>` 替换为目标 profile）：
 
 ```sh
-dsh plugin --profile <profile> add https://github.com/zxbingoo/harness-codex-cli-link/releases/download/v0.2.1/harness-codex-cli-link-0.2.1.tgz
+dsh plugin --profile <profile> add https://github.com/zxbingoo/dsh-codex-cli/releases/download/v0.2.1/harness-codex-cli-link-0.2.1.tgz
 ```
 
 开发时可使用 `dsh plugin --profile <profile> add link:/absolute/path/to/plugin` 安装本地源码。如界面没有出现提供商，请在没有任务运行时重启 Harness 应用。在会话模型选择器中选择 **Codex CLI** → **gpt-6.1-sol**（或其他目录模型）。插件不会自动替换现有默认 provider 或模型；只有点击 Providers 中的“设为 Harness 默认模型”才会更改全局默认。

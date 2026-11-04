@@ -1,11 +1,14 @@
 window.__ModuleLoader__.load({
-  id: 'harness-codex-cli-link',
+  id: 'dsh-codex-cli',
   factory(require) {
     const React = require('react');
     const h = React.createElement;
     const PANEL = 'harness-codex-cli-link';
+    // Each provider owns its configuration component. Future adapters (e.g. Claude)
+    // add a descriptor and a component; unavailable adapters are not advertised.
+    const PROVIDERS = [{ id: 'codex-cli', name: 'Codex', command: 'codex', mark: '⌘', component: 'codex' }];
     const css = `
-.hccl{height:100%;overflow:auto;background:var(--background-primary,transparent);color:inherit;font:14px/1.6 system-ui,sans-serif}.hccl *{box-sizing:border-box}.hccl-wrap{max-width:860px;margin:auto;padding:44px 28px 64px}.hccl-header{display:flex;align-items:center;justify-content:space-between;gap:20px;margin-bottom:30px}.hccl h1{font-size:28px;letter-spacing:-.8px;margin:4px 0}.hccl p{margin:0;opacity:.68}.hccl-eyebrow{font-size:11px;letter-spacing:2px;opacity:.55}.hccl-card{border:1px solid #8883;border-radius:16px;padding:24px;margin:16px 0;background:#88888805}.hccl-card h2{font-size:16px;margin:0 0 18px}.hccl-row{display:flex;justify-content:space-between;align-items:center;gap:20px}.hccl-label{display:block;font-weight:600;margin-bottom:8px}.hccl-field{margin:20px 0}.hccl select,.hccl input[type=text]{width:100%;padding:11px 12px;border:1px solid #8885;border-radius:9px;background:transparent;color:inherit;font:inherit}.hccl select option{color:#222;background:#fff}.hccl small{display:block;opacity:.6;margin-top:7px}.hccl button{border:1px solid #8885;border-radius:9px;background:transparent;color:inherit;font:inherit;padding:9px 14px;cursor:pointer}.hccl button:disabled{opacity:.4;cursor:default}.hccl button:focus-visible,.hccl input:focus-visible,.hccl select:focus-visible{outline:2px solid #6686ef;outline-offset:3px}.hccl-primary{background:#506bd8!important;color:white!important;border-color:transparent!important}.hccl-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.hccl-badge{border:1px solid #8884;border-radius:999px;padding:4px 10px;font-size:12px;white-space:nowrap}.hccl-status{color:#669978}.hccl-note{margin-top:14px!important;font-size:12px}.hccl-error{padding:12px 16px;border:1px solid #d66a;border-radius:10px;color:#cd6666;white-space:pre-wrap}.hccl-ok{padding:10px 0;color:#669978}.hccl-switch{position:relative;width:42px;height:24px;accent-color:#506bd8;cursor:pointer}.hccl-split{display:grid;grid-template-columns:1fr 1fr;gap:20px}.hccl kbd{font-size:12px;border:1px solid #8884;border-radius:4px;padding:1px 5px}@media(max-width:600px){.hccl-wrap{padding:24px 16px}.hccl-split{grid-template-columns:1fr;gap:0}.hccl-header{align-items:flex-start}.hccl-card{padding:18px}}
+.hccl{height:100%;min-height:0;overflow:auto;color:var(--dsw-alias-text-primary,inherit);background:var(--dsw-alias-bg-base,transparent);font:13px/1.55 system-ui,sans-serif}.hccl *{box-sizing:border-box}.hccl-wrap{max-width:920px;margin:0 auto;padding:48px 36px 64px}.hccl-header{margin-bottom:30px}.hccl h1{font-size:24px;font-weight:600;letter-spacing:-.6px;margin:0 0 6px}.hccl p{margin:0;color:var(--dsw-alias-text-secondary,inherit);opacity:.66}.hccl-list{border:1px solid var(--dsw-alias-border-l3,#8883);border-radius:12px;overflow:hidden}.hccl-provider-head{display:flex;align-items:center;gap:14px;padding:20px}.hccl-logo{display:grid;place-items:center;flex:none;width:40px;height:40px;border:1px solid #8883;border-radius:10px;font:24px/1 system-ui;background:#88888809}.hccl-provider-title{flex:1;min-width:0}.hccl-provider-title h2{font-size:15px;font-weight:600;margin:0 0 2px}.hccl-provider-sub{font-size:12px;display:flex;gap:10px;align-items:center;color:var(--dsw-alias-text-secondary,inherit)}.hccl-provider-sub code{opacity:.65;font-size:11px}.hccl-status{display:inline-flex;gap:6px;align-items:center;font-size:12px;color:var(--dsw-alias-text-secondary,inherit)}.hccl-dot{width:6px;height:6px;border-radius:50%;background:#999;display:inline-block}.hccl-dot[data-state=ready]{background:#45a279}.hccl-dot[data-state=checking]{background:#c39543}.hccl button{font:inherit;border:1px solid #8884;border-radius:7px;background:transparent;color:inherit;cursor:pointer;padding:7px 12px;white-space:nowrap}.hccl button:hover:not(:disabled){background:#88888810}.hccl button:disabled{opacity:.4;cursor:default}.hccl button:focus-visible,.hccl input:focus-visible,.hccl select:focus-visible,.hccl summary:focus-visible{outline:2px solid #6686ef;outline-offset:3px}.hccl-toggle{display:inline-flex;align-items:center;cursor:pointer;padding:5px}.hccl-toggle input{position:absolute;width:1px;height:1px;opacity:0}.hccl-track{width:34px;height:20px;background:#8886;border-radius:99px;position:relative;transition:background .15s}.hccl-track:after{content:'';position:absolute;top:3px;left:3px;width:14px;height:14px;border-radius:50%;background:#fff;box-shadow:0 1px 3px #0002;transition:transform .15s}.hccl-toggle input:checked+.hccl-track{background:#546cd4}.hccl-toggle input:checked+.hccl-track:after{transform:translateX(14px)}.hccl-toggle input:focus-visible+.hccl-track{outline:2px solid #6686ef;outline-offset:3px}.hccl-toggle input:disabled+.hccl-track{opacity:.4;cursor:default}.hccl-config-button{display:flex;align-items:center;gap:8px}.hccl-chevron{font-size:12px;transition:transform .15s}.hccl-chevron[data-open=true]{transform:rotate(180deg)}.hccl-body{border-top:1px solid #8883;padding:0 24px}.hccl-section-title{font-size:11px;letter-spacing:.6px;color:var(--dsw-alias-text-secondary,inherit);opacity:.6;padding-top:22px}.hccl-setting{display:grid;grid-template-columns:minmax(160px,1fr) minmax(200px,300px);gap:28px;padding:18px 0;border-bottom:1px solid #8882;align-items:start}.hccl-setting:last-child{border-bottom:0}.hccl-label{display:block;font-size:13px;font-weight:500;margin-bottom:4px}.hccl small{display:block;font-size:12px;line-height:1.5;opacity:.58}.hccl select,.hccl input[type=text]{width:100%;border:1px solid #8884;border-radius:7px;padding:8px 10px;background:var(--dsw-alias-bg-base,transparent);color:inherit;font:inherit;min-width:0}.hccl select option{background:var(--dsw-alias-bg-base,#fff);color:var(--dsw-alias-text-primary,#222)}.hccl-advanced{margin-top:8px}.hccl-advanced summary{cursor:pointer;font-size:11px;opacity:.6}.hccl-advanced input{margin-top:8px}.hccl-actions{display:flex;gap:8px;align-items:center;padding:18px 0;flex-wrap:wrap}.hccl-primary{background:#546cd4!important;color:white!important;border-color:transparent!important}.hccl-spacer{flex:1}.hccl-link{border:0!important;opacity:.65;font-size:12px!important;padding-left:0!important}.hccl-helper{font-size:12px;line-height:1.7;padding:16px 0;border-top:1px solid #8882;opacity:.58}.hccl-error{margin-top:16px;padding:12px 14px;border:1px solid #d666;border-radius:8px;color:#cf6b66;white-space:pre-wrap}.hccl-ok{padding-top:14px;color:#559d79;font-size:12px}.hccl-unsaved{font-size:11px;opacity:.5}.hccl-footer{margin-top:20px;font-size:11px;opacity:.45}@media(max-width:640px){.hccl-wrap{padding:28px 16px}.hccl-provider-head{padding:16px;gap:10px}.hccl-body{padding:0 16px}.hccl-setting{grid-template-columns:1fr;gap:10px}.hccl-logo{width:34px;height:34px}.hccl-actions .hccl-spacer{display:none}.hccl-config-button{padding:6px 8px!important}}@media(prefers-reduced-motion:reduce){.hccl *{transition:none!important}}
 `;
     const unwrap = result => { if (!result.ok) throw new Error(result.error.message); return result.value; };
     function Icon() { return h('svg', { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, 'aria-hidden': true }, h('rect', { x: 3, y: 4, width: 18, height: 16, rx: 4 }), h('path', { d: 'm7 9 3 3-3 3m6 0h4' })); }
@@ -13,7 +16,8 @@ window.__ModuleLoader__.load({
       name: PANEL,
       inject: ['slots', 'remote', 'remote.settings', 'remote.session'],
       apply(ctx) {
-        function Panel() {
+        function CodexConfiguration({ provider }) {
+          const [expanded, setExpanded] = React.useState(false);
           const [row, setRow] = React.useState(null);
           const [defaults, setDefaults] = React.useState(null);
           const [form, setForm] = React.useState({ enabled: true, model: 'gpt-6.1-sol', reasoningEffort: 'default' });
@@ -31,19 +35,19 @@ window.__ModuleLoader__.load({
             const epoch = ++generation.current;
             const doc = unwrap(await ctx.remote.settings.describe());
             const entry = doc.namespaces.find(x => x.ns === ns.current);
-            if (!entry) throw new Error('未找到插件配置，请重启 Harness 以加载 0.2.0 版本。');
+            if (!entry) throw new Error('未找到提供商配置，请重启 Harness 后重试。');
             if (!live.current || epoch !== generation.current) return;
             setDefaults(doc.namespaces.find(x => x.ns === 'agent-default-model') ?? null);
             if (!dirty.current) { setRow(entry); setForm({ enabled: entry.value.enabled, model: entry.value.model, reasoningEffort: entry.value.reasoningEffort }); }
           }
-          async function check(refresh = false) {
+          async function check() {
             setChecking(true); setError('');
             try {
               // Native remote.session transport also works in Electron's dsh-app scheme.
               // Generic connection.rpc HTTP channels are Web-only in this host version.
               const catalog = unwrap(await ctx.remote.session.modelCatalog());
               if (!live.current) return;
-              const group = catalog.groups.find(g => g.id === 'codex-cli');
+              const group = catalog.groups.find(g => g.id === provider.id);
               const list = (group?.models ?? []).filter(m => m.id !== 'configured');
               setModels(list); setConnected(list.length > 0);
               await loadSettings();
@@ -80,21 +84,42 @@ window.__ModuleLoader__.load({
             finally { if (live.current) setBusy(false); }
           }
           const known = models.some(m => m.id === form.model);
+          const status = checking ? '检查中' : !row ? '加载中' : !form.enabled ? '已停用' : connected ? '可用' : '待检查';
+          const field = (id, title, description, control) => h('div', { className: 'hccl-setting' },
+            h('div', null, h('label', { className: 'hccl-label', htmlFor: id }, title), h('small', null, description)), control);
+          return h('article', { className: 'hccl-list', 'aria-label': `${provider.name} 配置` },
+            h('div', { className: 'hccl-provider-head' },
+              h('span', { className: 'hccl-logo', 'aria-hidden': true }, provider.mark),
+              h('div', { className: 'hccl-provider-title' }, h('h2', null, provider.name),
+                h('div', { className: 'hccl-provider-sub' }, h('code', null, provider.command),
+                  h('span', { className: 'hccl-status', role: 'status' }, h('i', { className: 'hccl-dot', 'data-state': checking ? 'checking' : connected && form.enabled ? 'ready' : 'idle' }), status), connected && form.enabled && h('span', null, `${models.length} 个模型`))),
+              h('label', { className: 'hccl-toggle', title: '启用 Codex CLI' },
+                h('input', { type: 'checkbox', role: 'switch', 'aria-label': '启用 Codex CLI', checked: form.enabled, disabled: busy || !row, onChange: e => { change('enabled', e.target.checked); setExpanded(true); } }),
+                h('span', { className: 'hccl-track', 'aria-hidden': true })),
+              h('button', { className: 'hccl-config-button', 'aria-expanded': expanded, 'aria-controls': 'hccl-codex-settings', onClick: () => setExpanded(value => !value) }, '配置', h('span', { className: 'hccl-chevron', 'data-open': expanded, 'aria-hidden': true }, '⌄'))),
+            h('div', { className: 'hccl-body', id: 'hccl-codex-settings', hidden: !expanded },
+              h('div', { className: 'hccl-section-title' }, '模型与行为'),
+              field('hccl-model', '默认模型', '使用“跟随插件配置”的会话会采用此模型。',
+                h('div', null, h('select', { id: 'hccl-model', value: form.model, disabled: busy || !row, onChange: e => change('model', e.target.value) }, !known && h('option', { value: form.model }, form.model), ...models.map(m => h('option', { key: m.id, value: m.id }, m.name || m.id))),
+                  h('details', { className: 'hccl-advanced' }, h('summary', null, '自定义模型 ID'), h('input', { id: 'hccl-custom-model', 'aria-label': '自定义模型 ID', type: 'text', value: form.model, maxLength: 200, disabled: busy || !row, onChange: e => change('model', e.target.value), placeholder: '输入上游模型 ID' })))),
+              field('hccl-effort', '推理强度', '会话中的显式设置优先于此默认值。',
+                h('select', { id: 'hccl-effort', value: form.reasoningEffort, disabled: busy || !row, onChange: e => change('reasoningEffort', e.target.value) }, ...[['default', '跟随 CLI 默认'], ...(models.find(m => m.id === form.model)?.reasoning?.efforts?.map(e => [e.id, e.name || e.id]) ?? [['none', '无'], ['minimal', '最低'], ['low', '低'], ['medium', '中'], ['high', '高'], ['xhigh', '最高'], ['max', 'Max'], ['ultra', 'Ultra']])].map(([id, label]) => h('option', { key: id, value: id }, label)))),
+              h('div', { className: 'hccl-setting' }, h('div', null, h('span', { className: 'hccl-label' }, '模型目录'), h('small', null, '从本机 CLI 获取可用模型。')), h('button', { disabled: checking, onClick: () => check() }, checking ? '刷新中…' : '刷新模型')),
+              h('div', { className: 'hccl-actions' },
+                h('button', { className: 'hccl-primary', disabled: busy || !row || !form.model.trim() || !dirty.current, onClick: save }, busy ? '保存中…' : '保存配置'),
+                h('button', { disabled: busy || !row, onClick: () => { dirty.current = false; loadSettings().then(() => setNotice('已重新载入。')).catch(e => setError(e.message)); } }, '重新载入'),
+                dirty.current && h('span', { className: 'hccl-unsaved' }, '有未保存的更改'), h('span', { className: 'hccl-spacer' }),
+                h('button', { className: 'hccl-link', disabled: busy || !row || !form.enabled || dirty.current || !defaults, onClick: makeDefault }, '设为 Harness 默认模型')),
+              h('p', { className: 'hccl-helper' }, '使用本机 CLI 的登录与上游配置，凭据由 CLI 管理。配置保存在 Harness 中，不修改本机 CLI 配置。', h('br'), 'Codex CLI 0.166.0 · Python 3.11+')),
+            error && h('div', { className: 'hccl-error', role: 'alert' }, error), notice && h('div', { className: 'hccl-ok', role: 'status' }, notice));
+        }
+        const configurationComponents = { codex: CodexConfiguration };
+        function Panel() {
           return h('section', { className: 'hccl', 'aria-label': 'Providers 配置' }, h('style', null, css),
             h('div', { className: 'hccl-wrap' },
-              h('header', { className: 'hccl-header' }, h('div', null, h('div', { className: 'hccl-eyebrow' }, 'HARNESS · CLI LINK'), h('h1', null, 'Providers'), h('p', null, '连接本机 CLI，让模型与 Harness 工具协同工作。')), h('span', { className: 'hccl-badge' }, '仅支持 Codex')),
-              h('div', { className: 'hccl-card' }, h('div', { className: 'hccl-row' }, h('div', null, h('strong', null, '启用 Codex CLI'), h('p', null, '停用后拒绝新的 Codex 请求，不影响其他提供商。')), h('input', { className: 'hccl-switch', type: 'checkbox', role: 'switch', 'aria-label': '启用 Codex CLI', checked: form.enabled, disabled: busy || !row, onChange: e => change('enabled', e.target.checked) }))),
-              h('div', { className: 'hccl-card' }, h('h2', null, '模型配置'),
-                h('div', { className: 'hccl-field' }, h('label', { className: 'hccl-label', htmlFor: 'hccl-model' }, '默认模型'),
-                  h('select', { id: 'hccl-model', value: form.model, disabled: busy || !row, onChange: e => change('model', e.target.value) }, !known && h('option', { value: form.model }, form.model), ...models.map(m => h('option', { key: m.id, value: m.id }, m.name || m.id))),
-                  h('small', null, '在会话中选择“跟随插件配置”，即可使用此模型。显式选择其他模型的会话不会被覆盖。')),
-                h('div', { className: 'hccl-field' }, h('label', { className: 'hccl-label', htmlFor: 'hccl-custom-model' }, '自定义模型 ID'), h('input', { id: 'hccl-custom-model', type: 'text', value: form.model, maxLength: 200, disabled: busy || !row, onChange: e => change('model', e.target.value), placeholder: '例如 gpt-6.1-sol' }), h('small', null, '自定义上游的模型可能不在 CLI 目录中；请确认上游支持该 ID。')),
-                h('div', { className: 'hccl-field' }, h('label', { className: 'hccl-label', htmlFor: 'hccl-effort' }, '默认推理强度'), h('select', { id: 'hccl-effort', value: form.reasoningEffort, disabled: busy || !row, onChange: e => change('reasoningEffort', e.target.value) }, ...[['default', '跟随 CLI 默认'], ...(models.find(m => m.id === form.model)?.reasoning?.efforts?.map(e => [e.id, e.name || e.id]) ?? [['none', '无'], ['minimal', '最低'], ['low', '低'], ['medium', '中'], ['high', '高'], ['xhigh', '最高'], ['max', 'Max'], ['ultra', 'Ultra']])].map(([id, label]) => h('option', { key: id, value: id }, label))), h('small', null, '不同模型支持的强度不同；会话显式设置优先。')),
-                h('div', { className: 'hccl-actions' }, h('button', { className: 'hccl-primary', disabled: busy || !row || !form.model.trim(), onClick: save }, busy ? '保存中…' : '保存配置'), h('button', { disabled: busy || !row, onClick: () => { dirty.current = false; loadSettings().then(() => setNotice('已重新载入。')).catch(e => setError(e.message)); } }, '重新载入'), h('button', { disabled: busy || !row || !form.enabled || dirty.current || !defaults, onClick: makeDefault }, '设为 Harness 默认模型'))),
-              h('div', { className: 'hccl-card' }, h('div', { className: 'hccl-row' }, h('div', null, h('h2', { style: { marginBottom: 4 } }, '本机连接'), h('span', { className: connected ? 'hccl-status' : '' }, checking ? '正在检查 CLI…' : connected ? '● Codex CLI 可用 · 0.166.0' : '○ 尚未连接')), h('button', { disabled: checking, onClick: () => check(true) }, checking ? '检查中…' : '检查连接 / 刷新模型')), h('p', { className: 'hccl-note' }, '复用本机 Codex 登录及上游配置。本插件不读取或复制登录 token，也不修改 Codex 的配置文件。')),
-              error && h('div', { className: 'hccl-error', role: 'alert' }, error), notice && h('div', { className: 'hccl-ok', role: 'status' }, notice),
-              h('p', { className: 'hccl-note' }, '需要 Codex CLI 0.166.0 和 Python 3.11+。当前仅支持文本输入；配置保存在 Harness profile 中。更改模型时请等待当前工具任务结束。')
-            ));
+              h('header', { className: 'hccl-header' }, h('h1', null, 'Providers'), h('p', null, '管理模型提供商及其默认配置。')),
+              ...PROVIDERS.map(provider => h(configurationComponents[provider.component], { key: provider.id, provider })),
+              h('p', { className: 'hccl-footer' }, '模型更改将在下一次请求生效。当前任务执行期间请勿切换模型。')));
         }
         ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: PANEL }, Panel));
         ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id: PANEL, order: 15, label: 'Providers' }, Icon));

@@ -1,14 +1,14 @@
 {
-  "name": "harness-codex-cli-link",
-  "version": "0.2.1",
+  "name": "dsh-codex-cli",
+  "version": "0.2.2",
   "author": "zxbingoo",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/zxbingoo/harness-codex-cli-link.git"
+    "url": "git+https://github.com/zxbingoo/dsh-codex-cli.git"
   },
-  "homepage": "https://github.com/zxbingoo/harness-codex-cli-link#readme",
+  "homepage": "https://github.com/zxbingoo/dsh-codex-cli#readme",
   "bugs": {
-    "url": "https://github.com/zxbingoo/harness-codex-cli-link/issues"
+    "url": "https://github.com/zxbingoo/dsh-codex-cli/issues"
   },
   "description": "Connect DeepSeek Harness to Codex CLI using its existing configuration and authentication, with Harness-owned tools.",
   "keywords": [

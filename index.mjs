@@ -4,7 +4,7 @@ import { prepareIsolation, discoverModels } from './runtime.mjs';
 import { CONFIGURED_MODEL, currentConfig, resolveOptions, createModelDirectory } from './controller.mjs';
 export { Config } from './config.mjs';
 
-export const name = 'harness-codex-cli-link';
+export const name = 'dsh-codex-cli';
 export const inject = ['llm'];
 export function apply(ctx, config = {}) {
   const ns = ctx.fiber?.entry?.options?.id ?? name;

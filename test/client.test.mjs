@@ -31,13 +31,21 @@ test('sidebar panel reads persistent settings, saves switch/model and sets Harne
   const root = createRoot(document.getElementById('root'));
   try {
     await act(async () => { root.render(React.createElement(Panel)); });
-    assert.match(document.body.textContent, /仅支持 Codex/);
+    assert.doesNotMatch(document.body.textContent, /仅支持|当前只支持|HARNESS · CLI LINK/);
+    assert.equal(document.querySelector('h1').textContent, 'Providers');
+    const configure = [...document.querySelectorAll('button')].find(b => b.textContent.startsWith('配置'));
+    assert.equal(configure.getAttribute('aria-expanded'), 'false');
+    assert.equal(document.getElementById('hccl-codex-settings').hidden, true);
+    await act(async () => { configure.click(); });
+    assert.equal(configure.getAttribute('aria-expanded'), 'true');
+    assert.equal(document.getElementById('hccl-codex-settings').hidden, false);
+    assert.match(document.body.textContent, /2 个模型/);
     const model = document.getElementById('hccl-model');
     await act(async () => { model.value = 'custom-model'; model.dispatchEvent(new dom.window.Event('change', { bubbles: true })); });
     const button = text => [...document.querySelectorAll('button')].find(b => b.textContent === text);
     // An external edit plus catalog refresh must not advance the baseline of a dirty form.
     row = { ...row, revision: 'external-r2', value: { ...row.value, reasoningEffort: 'high' } };
-    await act(async () => { button('检查连接 / 刷新模型').click(); });
+    await act(async () => { button('刷新模型').click(); });
     await act(async () => { button('保存配置').click(); });
     assert.equal(writes[0].value.model, 'custom-model'); assert.equal(writes[0].revision, 'r1');
     await act(async () => { button('设为 Harness 默认模型').click(); });
