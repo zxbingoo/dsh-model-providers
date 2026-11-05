@@ -17,11 +17,21 @@ test('package metadata and published documentation use the canonical project ide
   assert.equal(pkg.repository.url, 'git+' + repository + '.git');
   assert.equal(pkg.homepage, repository + '#readme');
   assert.equal(pkg.bugs.url, repository + '/issues');
-  const archive = `${repository}/releases/download/v${pkg.version}/${pkg.name}-${pkg.version}.tgz`;
+  const review = /^\d+\.\d+\.\d+-review\.\d+$/.test(pkg.version);
+  const archiveName = `${pkg.name}-${pkg.version}.tgz`;
+  const archive = review ? archiveName : `${repository}/releases/download/v${pkg.version}/${archiveName}`;
   for (const name of ['README.md', 'RELEASE_NOTES.md']) {
     const text = await readFile(new URL('../' + name, import.meta.url), 'utf8');
-    assert.match(text, /^# dsh-model-providers(?: v\d+\.\d+\.\d+)?\n/u, name);
-    assert(text.includes(archive), `${name}: installation URL must match the package version`);
+    assert.match(text, /^# dsh-model-providers(?: v\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?)?\n/u, name);
+    assert(text.includes(archive), `${name}: installation archive must match the package version`);
+    if (review) {
+      assert.match(text, /本地审核版/u, name);
+      assert.match(text, /未发布到 GitHub 或插件市场/u, name);
+      assert(!text.includes(`/releases/download/v${pkg.version}/`), 'Do not invent a public review download');
+    } else {
+      assert.doesNotMatch(text, /本地审核版|未发布到 GitHub 或插件市场|0\.3\.8-review/u, name);
+      assert(text.includes(`${repository}/releases/download/v${pkg.version}/${pkg.name}-${pkg.version}.sha256`), `${name}: checksum must match the release`);
+    }
     for (const match of text.matchAll(/https:\/\/github\.com\/zxbingoo\/([^\s/)#]+)/gu)) {
       assert.equal(match[1], pkg.name, `${name}: repository link must use the canonical name`);
     }
