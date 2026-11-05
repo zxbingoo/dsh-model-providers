@@ -47,8 +47,9 @@ export class CodexRpc {
       this.pending.set(id, { method, timer, resolve, reject }); this.send({ id, method, params });
     });
   }
-  async initialize() {
-    await this.call('initialize', { clientInfo: { name: 'deepseek-harness-cli-bridge', version: '0.1.0' }, capabilities: { experimentalApi: true } });
+  async initialize({ explicitGatewayOauth = false, timeoutMs = 30000 } = {}) {
+    await this.call('initialize', { clientInfo: { name: 'deepseek-harness-cli-bridge', version: '0.1.0' },
+      capabilities: { experimentalApi: true, ...(explicitGatewayOauth ? { explicitGatewayOauth: true } : {}) } }, timeoutMs);
     this.send({ method: 'initialized', params: {} });
   }
   fail(error) {

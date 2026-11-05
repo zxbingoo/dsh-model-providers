@@ -13,7 +13,15 @@ test('host registers authenticated status channel and reacts to volatile config 
     on: (name, fn) => { assert.equal(name, 'loader/volatile-update'); event = fn; },
     inject: (services, fn) => {
       if (services[0] === 'settings') fn({ effect: fn => fn(), settings: { configure: () => () => {} } });
-      if (services[0] === 'connection') fn({ connection: { rpc: { handle: (channel, fn) => { assert.equal(channel, '/harness-codex-cli-link'); handler = fn; } } } });
+      if (services[0] === 'connection') {
+        assert.deepEqual(services, ['connection', 'webServer']);
+        const child = { connection: { register: (owner, channel, fn) => {
+          assert.equal(owner, child);
+          assert.equal(channel, '/harness-codex-cli-link');
+          handler = fn;
+        } } };
+        fn(child);
+      }
     },
   };
   apply(ctx, config);

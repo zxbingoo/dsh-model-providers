@@ -2,6 +2,7 @@ import { CodexCliAdapter } from './adapter.mjs';
 import { CodexRpc } from './rpc.mjs';
 import { prepareIsolation, discoverModels, getDiscoveryFingerprint } from './runtime.mjs';
 import { imageRequestTarget } from './images.mjs';
+import { createUsageService, createUsageHandler } from './usage-service.mjs';
 import { currentConfig, resolveModelId, modelChoices, resolveOptions, migrateDefaultSelection, createModelDirectory } from './controller.mjs';
 export { Config } from './config.mjs';
 
@@ -57,6 +58,9 @@ export function createCodexAdapter(config = {}, {
 export function apply(ctx, config = {}) {
   const ns = ctx.fiber?.entry?.options?.id ?? name;
   const { adapter, directory } = createCodexAdapter(config, { resolveAttachments: () => ctx.get?.('attachments') });
+  const usageService = createUsageService();
+  const accountUsage = createUsageHandler(usageService);
+  ctx.effect(() => () => usageService.close());
   let registration;
   ctx.effect(() => { registration = ctx.llm.registerAdapter(['codex-cli'], adapter); return registration; });
   ctx.on('loader/volatile-update', () => registration?.replace(['codex-cli']));
@@ -69,8 +73,13 @@ export function apply(ctx, config = {}) {
     return () => { disposed = true; };
   }));
   ctx.inject(['settings'], child => child.effect(() => child.settings.configure({ auto: false }, ctx.fiber)));
-  ctx.inject(['connection'], child => {
-    child.connection.rpc.handle('/harness-codex-cli-link', async (endpoint, payload, signal) => {
+  // rc.5's rpc getter can retain the Connection provider's context rather than
+  // this consumer's. Wait for both services and pass the route owner explicitly;
+  // register still uses Connection admission, its Peer and owner-bound disposal.
+  ctx.inject(['connection', 'webServer'], child => {
+    child.connection.register(child, '/harness-codex-cli-link', async (endpoint, payload, signal, peer) => {
+      // Account data is owner-only, even when the host admits a restricted peer.
+      if (endpoint === 'accountUsage') return accountUsage(payload, signal, peer);
       try {
         if (endpoint !== 'status') return { ok: false, error: { code: 'codex/not-found', message: 'Unknown method', details: {} } };
         if (payload !== undefined && payload !== null && (typeof payload !== 'object' || Array.isArray(payload) || Object.keys(payload).some(k => k !== 'refresh') || (payload.refresh !== undefined && typeof payload.refresh !== 'boolean'))) throw new Error('Invalid status request');
@@ -78,7 +87,7 @@ export function apply(ctx, config = {}) {
         const models = await directory(payload?.refresh === true);
         signal?.throwIfAborted();
         return { ok: true, value: { namespace: ns, settings: currentConfig(config), models, version: '0.166.0', supportedProviders: ['codex'], connected: true } };
-      } catch (error) { return { ok: false, error: { code: 'codex/unavailable', message: error.message, details: {} } }; }
+      } catch { return { ok: false, error: { code: 'codex/unavailable', message: '暂时无法读取 Codex 模型目录，请检查 CLI 配置后重试。', details: {} } }; }
     });
   });
 }
