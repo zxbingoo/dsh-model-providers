@@ -1,6 +1,6 @@
 {
   "name": "dsh-model-providers",
-  "version": "0.3.7",
+  "version": "0.3.8",
   "icon": "assets/avatar.png",
   "author": "zxbingoo",
   "repository": {
@@ -43,7 +43,8 @@
       "inject": [
         "@deepseek-ai/dsh-client-ui-layout",
         "@deepseek-ai/dsh-client-ui-sidebar",
-        "@deepseek-ai/dsh-api-remotes"
+        "@deepseek-ai/dsh-api-remotes",
+        "@deepseek-ai/dsh-client-connection"
       ]
     }
   },
@@ -58,6 +59,8 @@
     "adapter.mjs",
     "rpc.mjs",
     "runtime.mjs",
+    "account-usage.mjs",
+    "usage-service.mjs",
     "bundle.yml",
     "isolation/isolation.mjs",
     "isolation/models.json",
@@ -74,6 +77,9 @@
     "assets/avatar.png",
     "assets/sidebar-icon.svg",
     "scripts/preview-brand.mjs",
+    "scripts/preview-usage.mjs",
+    "scripts/test-account-isolation.mjs",
+    "scripts/test-host-transport.mjs",
     "scripts/check-icon.mjs"
   ],
   "scripts": {
@@ -81,7 +87,10 @@
     "test": "node --test test/*.test.mjs",
     "test:live": "node test-live.mjs",
     "test:isolation": "node isolation/test-isolation.mjs",
-    "preview:brand": "node scripts/preview-brand.mjs"
+    "test:account-isolation": "node scripts/test-account-isolation.mjs",
+    "test:host-transport": "node scripts/test-host-transport.mjs",
+    "preview:brand": "node scripts/preview-brand.mjs",
+    "preview:usage": "node scripts/preview-usage.mjs"
   },
   "license": "MIT",
   "devDependencies": {

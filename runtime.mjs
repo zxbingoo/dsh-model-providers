@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { tmpdir, homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { CodexRpc } from './rpc.mjs';
+import { accountSummary, usageSummary, usageSnapshot } from './account-usage.mjs';
 import { CODEX_VERSION, assertCodexVersion, readConfigStructure, constructIsolatedCatalog, buildIsolationArgs, buildDiscoveryArgs } from './isolation/isolation.mjs';
 
 const TEMP_PREFIX = 'dsh-codex-bridge-';
@@ -123,6 +124,95 @@ export function createRuntime({
     }
   }
 
+  /** Isolated, short-lived account snapshot. No thread, model request, login or
+   * reset-credit consumption is exposed. Codex itself still owns auth refresh,
+   * routing discovery and its normal startup/cache side effects.
+   */
+  async function readAccountUsage({ signal, timeoutMs = 30000 } = {}) {
+    // No account snapshot cache: each manual refresh observes a fresh CLI process.
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    signal?.addEventListener('abort', abort, { once: true });
+    if (signal?.aborted) abort();
+    const budgetMs = Number.isFinite(timeoutMs) && timeoutMs > 0 ? Math.min(timeoutMs, 30000) : 30000;
+    const timer = setTimeout(abort, budgetMs);
+    let isolation, rpc, closing;
+    const close = () => {
+      if (!rpc) return;
+      if (!closing) {
+        try { closing = Promise.resolve(rpc.close()); }
+        catch (error) { closing = Promise.reject(error); }
+        // An abort listener cannot await; final cleanup still awaits this promise.
+        closing.catch(() => {});
+      }
+      return closing;
+    };
+    controller.signal.addEventListener('abort', close, { once: true });
+    const check = () => controller.signal.throwIfAborted();
+    const object = v => v !== null && typeof v === 'object' && !Array.isArray(v);
+    const readAccount = async () => {
+      check();
+      const result = await rpc.call('account/read', { refreshToken: false }, 10000);
+      check();
+      if (!object(result) || !('account' in result) || typeof result.requiresOpenaiAuth !== 'boolean'
+        || (result.account !== null && !object(result.account))) throw new Error('Invalid account response');
+      return result;
+    };
+    const workspaceId = value => nonemptyString(value?.workspaceRouting?.chatgptAccountId) ? value.workspaceRouting.chatgptAccountId : null;
+    // Compare raw identity fields only in memory; never send IDs or raw account
+    // records to the client. A matching masked email is NOT an identity check.
+    const identity = value => JSON.stringify([value?.account?.type, value?.account?.email,
+      value?.account?.planType, value?.account?.workspaceName, workspaceId(value)]);
+    try {
+      try {
+        check();
+        isolation = await prepareDiscoveryIsolation();
+        check();
+        let epoch = 0;
+        rpc = rpcFactory({ binary: isolation.binary, args: isolation.args, cwd: isolation.cwd, env,
+          onRequest: async () => { throw new Error('Server requests are not allowed during account usage reads'); },
+          onNotification: message => { if (message?.method === 'account/updated') epoch++; },
+        });
+        check();
+        // A pinned CLI plus explicit opt-in prevents legacy automatic gateway
+        // login. Probe support, fail closed on unknown method/timeout, never login.
+        await rpc.initialize({ explicitGatewayOauth: true, timeoutMs: 10000 });
+        check();
+        const gateway = await rpc.call('account/gatewayOAuth/read', undefined, 10000);
+        if (!object(gateway) || typeof gateway.required !== 'boolean') throw new Error('Missing gateway capability');
+        check();
+        // One bounded retry absorbs a late startup routing notification. Updated
+        // invalidates the read; it does not prove an account was actually switched.
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const before = await readAccount();
+          if (before.account === null) return usageSnapshot(before.requiresOpenaiAuth ? 'signedOut' : 'unsupported');
+          const account = accountSummary(before.account);
+          if (account.type !== 'chatgpt') return usageSnapshot('unsupported', account);
+          const baseline = epoch;
+          const usage = await rpc.call('account/rateLimits/read', { supportsLunaReserve: false, excludeResetCreditDetails: false }, 10000);
+          check();
+          const after = await readAccount();
+          if (epoch !== baseline || identity(before) !== identity(after)) continue;
+          const id = workspaceId(before);
+          if (!id || !nonemptyString(usage?.accountId)) return usageSnapshot('unverified', account);
+          if (workspaceId(after) !== id || usage.accountId !== id) continue;
+          return usageSnapshot('ready', account, usageSummary(usage));
+        }
+        return usageSnapshot('changed');
+      } finally {
+        clearTimeout(timer);
+        controller.signal.removeEventListener('abort', close);
+        signal?.removeEventListener('abort', abort);
+        try { await close(); }
+        finally { await isolation?.cleanup(); }
+      }
+    } catch {
+      // No upstream message/data/URL, stderr or credentials escape this boundary.
+      if (signal?.aborted) throw Object.assign(new Error('Account usage read cancelled'), { name: 'AbortError' });
+      return usageSnapshot('unavailable');
+    }
+  }
+
   /** Opaque cache key; stats config.toml only, never reads config values or auth files.
    * Auth/upstream/environment changes not represented here still need TTL/manual refresh.
    */
@@ -136,7 +226,7 @@ export function createRuntime({
     return createHash('sha256').update(JSON.stringify({ version: CODEX_VERSION, binary, home, path: env.PATH ?? '', config })).digest('hex');
   }
 
-  return { prepareIsolation, prepareDiscoveryIsolation, discoverModels, getDiscoveryFingerprint };
+  return { prepareIsolation, prepareDiscoveryIsolation, discoverModels, getDiscoveryFingerprint, readAccountUsage };
 }
 
-export const { prepareIsolation, prepareDiscoveryIsolation, discoverModels, getDiscoveryFingerprint } = createRuntime();
+export const { prepareIsolation, prepareDiscoveryIsolation, discoverModels, getDiscoveryFingerprint, readAccountUsage } = createRuntime();

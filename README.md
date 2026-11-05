@@ -4,10 +4,15 @@
 
 为 DeepSeek Harness 提供本机模型 CLI 接入、动态模型发现和图片输入，工具调用由 Harness 执行。目前支持 Codex CLI。
 
-[GitHub](https://github.com/zxbingoo/dsh-model-providers) · [下载 v0.3.7](https://github.com/zxbingoo/dsh-model-providers/releases/tag/v0.3.7) · [发布说明](./RELEASE_NOTES.md)
+**v0.3.8** 新增 Codex 登录的 ChatGPT 账号套餐、额度与可用重置卡的只读展示，并修复 Harness `0.2.1-rc.5` 的额度接口注册问题。
+
+“模型”和“套餐与额度”依次位于同一展开区域的两个 Tab 中。区域默认收起，首次展开默认显示“模型”，再次展开保留当前 Tab；启用 Codex CLI 时自动展开并切换到“模型”。两处刷新入口均为对应 Tab 内容区右上角的图标按钮，使用原生 `title` 提示；悬停不发起请求。
+
+[GitHub](https://github.com/zxbingoo/dsh-model-providers) · [发布说明](<./RELEASE_NOTES.md>)
 
 ## 功能
 
+- **只读账号额度**：进入页面尚未加载时自动读取一次 Codex 登录的 ChatGPT 账号快照，也可手动刷新；仅展示套餐类型、各真实额度窗口的已用比例与重置时间，以及重置卡可用数量、可用卡类型与到期时间。缺失字段显示“未提供”，不会误报为 0；`Full reset` 显示为“完全重置”。
 - **动态模型发现**：读取 Codex CLI 原生 `model/list`，按实际返回的能力展示模型和推理强度，不猜测未知模型能力。
 - **图片输入**：支持用户图片、历史图片和 Harness 工具返回的图片，通过原生图片输入传给 CLI，不使用公共图床。
 - **Harness 工具执行**：关闭 CLI 的原生工具、MCP、plugins、hooks 和技能注入，只允许 Harness 提供和执行工具。
@@ -27,21 +32,44 @@
 
 ## 安装
 
-通过 GitHub Release 分发，无需 npm 或本地构建。在 Harness 插件管理器中添加安装包 URL，或执行以下命令，将 `<profile>` 替换为目标 profile：
+通过 GitHub Release 分发，无需 npm 或本地构建。下载 v0.3.8 [安装包](<https://github.com/zxbingoo/dsh-model-providers/releases/download/v0.3.8/dsh-model-providers-0.3.8.tgz>) 与对应的 [SHA-256 校验文件](<https://github.com/zxbingoo/dsh-model-providers/releases/download/v0.3.8/dsh-model-providers-0.3.8.sha256>)，保存在同一目录后校验：
 
 ```sh
-dsh plugin --profile <profile> add https://github.com/zxbingoo/dsh-model-providers/releases/download/v0.3.7/dsh-model-providers-0.3.7.tgz
+shasum -a 256 -c dsh-model-providers-0.3.8.sha256
 ```
 
-包名为 **`dsh-model-providers`**。同一 profile 仅启用一份该插件。安装或更新后，请在所有任务结束时完全退出并重新打开 Harness。
+校验成功后，在 Harness 插件管理器中选择该安装包进行安装或更新。也可添加安装包 URL，或执行以下命令，将 `<profile>` 替换为目标 profile：
 
-安装包校验值随 Release 的 `SHA256SUMS.txt` 提供。
+```sh
+dsh plugin --profile <profile> add https://github.com/zxbingoo/dsh-model-providers/releases/download/v0.3.8/dsh-model-providers-0.3.8.tgz
+```
+
+插件身份保持不变：包名 **`dsh-model-providers`**，provider **`codex-cli`**，实例 **`harness-codex-cli-link`**。同一 profile 仅启用一份该插件，不要叠加启用本地链接与安装包副本。
+
+不要在当前任务未结束时切换或更新插件。本次发布准备任务不会重启 Harness；安装或更新请等任务结束后进行，并在所有任务结束后完全退出并重新打开 Harness，使前后端加载同一版本。
 
 ## 使用
 
-1. 打开左侧栏 **Providers**，启用 **Codex CLI** 并检查连接。
-2. 刷新模型目录，选择默认模型和推理强度后保存。
-3. 在会话模型选择器中选择 **Codex CLI** 下的具体模型。需要修改全局默认时，在 Providers 中显式执行“设为 Harness 默认模型”。
+1. 打开左侧栏 **Providers**。Codex CLI 的统一详情区默认收起；首次点击“展开”默认进入“模型”Tab，点击“收起”隐藏整个详情区，再次展开保留当前 Tab。两个 Tab 的顺序为“模型”“套餐与额度”。
+2. 启用 **Codex CLI** 时会自动展开并选中“模型”Tab；也可手动切换到“模型”，检查连接，点击内容区右上角的刷新图标（悬停提示“刷新模型”）刷新模型目录，选择默认模型和推理强度后保存。
+3. 在会话模型选择器中选择 **Codex CLI** 下的具体模型。需要修改全局默认时，在“模型”Tab 中显式执行“设为 Harness 默认模型”。
+4. 切换到“套餐与额度”Tab 查看已自动加载的额度。每次进入 Providers 页面，额度尚未加载时自动查询一次，即使详情区仍收起或停留在“模型”Tab；之后可点击该内容区右上角的刷新图标（悬停提示“刷新额度”）手动刷新。悬停两处图标都只显示提示，不发起请求。不轮询，失败不循环重试；加载后的重渲染或配置事件不会重复触发额度查询。模型目录仍沿用原有加载行为。
+5. 切换 Tab 或收起详情区仅用 `hidden` 隐藏内容，不卸载额度或模型表单，不重复查询、不写入配置，也不丢失未保存的表单修改。真正离开页面卸载组件时才取消未完成的额度查询并丢弃快照，重新进入会再次自动查询。
+6. “重新载入”按钮已移除，保留“保存配置”与模型、额度刷新。遇到并发配置冲突时，按提示重新进入页面获取最新配置后再修改、保存；离开页面会丢失未保存的更改。
+
+### 账号额度边界
+
+技术边界保留在文档，而非主界面。v0.3.8 的额度 RPC 同时等待 `connection` 与 `webServer`，使用 `child.connection.register(child, ...)` 显式指定路由所属插件上下文，规避 rc.5 的 RPC getter 使用提供方上下文导致的注册失败；沿用 Connection 的认证、Peer 与生命周期管理。接口未就绪、权限不足、响应不兼容和连接失败分别提示，不回显原始错误。
+
+- 额度来自此次读取的 **Codex 登录的 ChatGPT 账号** 快照，不是 OpenAI API 余额或第三方中转余额，不按当前模型计价。API Key、云提供商或无认证的自定义上游显示“不支持/未提供”。
+- 额度窗口按服务端返回时长展示，不固定假设为 5 小时或一周；重置时间使用本地时区。重置时间已过或百分比降低不等于服务端已允许继续使用。
+- 主界面不展示邮箱、工作区、账号类型、普通 credits、使用资格或查询时间。
+- 重置卡仅展示 `availableCount` 及可用卡的类型（优先采用服务端标题）与到期时间；不展示已使用、处理中或未知状态条目，不提供历史记录或使用/消费按钮。数量不使用详情条数反算，缺失字段仍显示“未提供”；可用卡详情可能不完整，到期时间未知与明确不过期分别展示。
+- 前后读取账号，比对原始账号身份、工作区标识与额度 `accountId` 归属；账号更新通知或不一致会使本次读取失效，最多进行一次有界重读，仍无法匹配时丢弃额度。缺失可配对标识时不展示额度，不以脱敏邮箱证明身份。该策略不是跨进程实时或原子切换保证；切换 CLI 账号后请重新刷新。
+- 端点仅 Harness 所有者（owner）可读取，只接受空对象参数；不是通用 CLI 或命令代理。只返回白名单 DTO 与固定安全错误，不返回原始账号/重置卡标识、凭据或原始错误。
+- 快照仅保留在当前已挂载页面内，不写入 settings、localStorage 或文件；刷新开始即清除旧快照，失败不回退到旧数据。服务端仅共享进行中的读取，完成后不缓存账号快照。
+- 离页卸载、请求取消、owner 连接撤销及插件卸载会传播取消。并发调用各自拥有取消权，取消一个调用者不影响其他调用者；最后一个调用者取消时才中止共享的底层读取。
+- 查询仅使用独立隔离进程和只读 RPC，不提供购买、登录、退出或卡消费操作，不通过模型 turn 查询额度；认证与正常续期、网络访问及 CLI 自身缓存等行为仍由 Codex 管理，不能保证 CLI 零本地副作用。
 
 当前工具任务未结束时不要切换模型。停用不会强制终止正在运行的 turn；停用后不接受新的 Codex 请求或后续工具续接。
 
@@ -55,26 +83,34 @@ dsh plugin --profile <profile> add https://github.com/zxbingoo/dsh-model-provide
 - CLI 整次文本输入限制为 1048576 字符，插件按 UTF-8 字节保守预检，超限返回 `CONTEXT_WINDOW_EXCEEDED`。压缩后仍超限时请手动压缩或新建会话。
 - 临时隔离目录不包含凭据；未知服务端请求默认拒绝，配置结构解析或安全准备失败时拒绝发起请求。
 - 随包模型元数据仅用于执行隔离模板；模型发现使用 CLI 原生目录。CLI 目录与自定义上游可能不同，自定义模型的未知能力不会被推断。
-- 已在 macOS 验证；Windows 和 Linux 尚未完成集成验证。
+- 验证环境为 macOS；Windows 和 Linux 尚未完成集成验证。
 
 ## 开发与测试
 
 纯 ESM 插件，无需构建。开发时可使用 `dsh plugin --profile <profile> add link:/absolute/path/to/dsh-model-providers` 安装本地源码。
 
+推荐串行运行单元测试，避免 fake startup 在并行负载下偶发超时：
+
 ```sh
 npm install
-npm test
+node --test --test-concurrency=1 test/*.test.mjs
 npm run test:isolation
+npm run test:account-isolation
 ```
 
-隔离测试仅使用真实 CLI 与本地假上游，不使用真实凭据或付费模型请求。真实模型往返测试需要显式授权模型用量后运行：
+- mock RPC、假 CLI 与 React/jsdom 测试覆盖只读 RPC 顺序、账号配对、缺失值、owner 权限、取消、并发及前端交互，不连接真实账号。
+- CLI 隔离测试使用真实 Codex CLI、合成配置与本地假上游，不使用真实凭据或付费模型请求；额度隔离测试不执行登录、模型 turn 或重置卡消费。
+- 实际宿主离线通信契约回归需显式指定 Harness runtime：`DSH_HOST_RUNTIME_DIR=/absolute/path/to/dsh npm run test:host-transport`。该回归使用实际 Cordis、Connection、WebServer 与浏览器 RPC 实现，但服务与响应为合成数据，不启动真实服务、不访问账号、不运行 CLI。若 runtime 位于 `app.asar`，需以 Electron 可执行文件配合 `ELECTRON_RUN_AS_NODE=1` 运行对应脚本。
+- mock/DOM 测试和实际宿主离线通信契约均**不是真实账号 GUI E2E**。离线界面预览使用模拟数据、禁用按钮，不是当前 GUI 截图；加载新版本后的真实账号显示仍需单独确认。
+
+真实模型往返测试仅可在另行显式授权模型用量后运行，不属于上述离线验证或本次发布准备；本任务不运行付费 turn、登录或卡消费：
 
 ```sh
 DSH_CODEX_LIVE_TEST=1 npm run test:live
 ```
 
-无开发构建监听时，源码更新需要在任务结束后重启 Harness 生效。
+源码或安装包更新后，请在所有任务结束后完全退出并重新打开 Harness；本次任务不会自动重启应用。
 
 ## 许可证
 
-插件实现采用 MIT 许可证，见 [LICENSE](./LICENSE)。随包保存的 OpenAI Codex 模型目录采用 Apache-2.0，来源与上游声明见 [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md)。本项目与 OpenAI、DeepSeek 或 Paseo 无隶属或背书关系。
+插件实现采用 MIT 许可证，见 [LICENSE](<./LICENSE>)。随包保存的 OpenAI Codex 模型目录采用 Apache-2.0，来源与上游声明见 [THIRD_PARTY_NOTICES.md](<./THIRD_PARTY_NOTICES.md>)。本项目与 OpenAI、DeepSeek 或 Paseo 无隶属或背书关系。
