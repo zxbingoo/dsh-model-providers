@@ -1,0 +1,52 @@
+name: DSH compatibility
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      dsh-version:
+        description: Additional DSH version or npm tag to validate
+        required: false
+        default: latest
+permissions:
+  contents: read
+jobs:
+  compatibility:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        dsh: ['0.2.1-rc.5', '0.2.2-rc.1', 'latest']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: node --test --test-concurrency=1 test/*.test.mjs
+      - name: Install isolated host dependencies (no install scripts)
+        env:
+          DSH_VERSION: ${{ matrix.dsh }}
+        run: npm install --prefix "$RUNNER_TEMP/dsh-host" --ignore-scripts --no-audit --no-fund "@deepseek-ai/dsh@$DSH_VERSION"
+      - name: Check metadata, host peer and offline transport
+        env:
+          DSH_HOST_RUNTIME_DIR: ${{ runner.temp }}/dsh-host
+        run: npm run test:compatibility
+  requested-version:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Install requested host (no install scripts)
+        env:
+          DSH_VERSION: ${{ inputs.dsh-version }}
+        run: npm install --prefix "$RUNNER_TEMP/dsh-host" --ignore-scripts --no-audit --no-fund "@deepseek-ai/dsh@$DSH_VERSION"
+      - name: Check requested host
+        env:
+          DSH_HOST_RUNTIME_DIR: ${{ runner.temp }}/dsh-host
+        run: npm run test:compatibility
