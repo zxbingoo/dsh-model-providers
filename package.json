@@ -1,6 +1,6 @@
 {
   "name": "dsh-model-providers",
-  "version": "0.3.8",
+  "version": "0.3.9",
   "icon": "assets/avatar.png",
   "author": "zxbingoo",
   "repository": {
@@ -32,7 +32,7 @@
     "./package.json": "./package.json"
   },
   "engines": {
-    "dsh": "0.2.1-rc.5"
+    "dsh": ">=0.2.1-rc.5 <0.2.2-0 || >=0.2.2-rc.1 <0.3.0-0"
   },
   "dsh": {
     "bundle": {
@@ -49,7 +49,7 @@
     }
   },
   "peerDependencies": {
-    "@deepseek-ai/schemastery": "~3.18.5"
+    "@deepseek-ai/schemastery": "^3.18.5"
   },
   "files": [
     "client.js",
@@ -80,6 +80,7 @@
     "scripts/preview-usage.mjs",
     "scripts/test-account-isolation.mjs",
     "scripts/test-host-transport.mjs",
+    "scripts/check-host-compatibility.mjs",
     "scripts/check-icon.mjs"
   ],
   "scripts": {
@@ -89,6 +90,7 @@
     "test:isolation": "node isolation/test-isolation.mjs",
     "test:account-isolation": "node scripts/test-account-isolation.mjs",
     "test:host-transport": "node scripts/test-host-transport.mjs",
+    "test:compatibility": "node scripts/check-host-compatibility.mjs",
     "preview:brand": "node scripts/preview-brand.mjs",
     "preview:usage": "node scripts/preview-usage.mjs"
   },

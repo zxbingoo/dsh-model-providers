@@ -1,6 +1,17 @@
-# dsh-model-providers v0.3.8
+# dsh-model-providers v0.3.9
 
-新增 Codex 登录的 ChatGPT 账号套餐、额度与可用重置卡的只读展示；修复 Harness `0.2.1-rc.5` 的接口注册，并统一 Providers 的模型与额度界面。
+v0.3.9 调整宿主与 Schemastery 的版本范围，接纳当前 npm `latest` 和本机已安装的 Harness `0.2.2-rc.1`。真实宿主接口静态审查与实际宿主离线 host transport 回归未发现需要修改业务 API 的问题；精确版本元数据阻断不等于 API 真不兼容。安装包与 SHA-256 校验文件通过 GitHub Release 分发。
+
+## 宿主兼容策略
+
+- `engines.dsh` 为 `>=0.2.1-rc.5 <0.2.2-0 || >=0.2.2-rc.1 <0.3.0-0`：支持 `0.2` 稳定补丁版本及已明确声明的 `0.2.1` / `0.2.2` 预发布支线。
+- Schemastery peer 从 `~3.18.5` 改为 `^3.18.5`，接纳当前 runtime 的 `3.19.0`；这是依赖版本范围修正，不是已发现业务 API 不兼容的修复。
+- 版本范围接纳不等于范围内所有未来版本均已验证。按默认 semver 预发布规则，未来的 `0.2.3-rc.1` 不满足范围，需先验证再显式增加支线；拒绝 `0.3+` / `1+`，绝不使用 `*` 或版本 exemption。
+- 新增实际宿主兼容检查脚本与 CI 定义：`DSH_HOST_RUNTIME_DIR=/path/to/dsh npm run test:compatibility`。校验宿主 semver 的接纳/拒绝边界、宿主 Schemastery 配置 API，再运行实际宿主离线 transport。CI 在 push / PR 时使用 Node 24 覆盖 `0.2.1-rc.5`、`0.2.2-rc.1` 与 npm `latest`，并支持手动指定版本；隔离安装宿主且禁用安装脚本。远端矩阵是否通过以 GitHub Actions 结果为准，不将 CI 定义或本地验证视为远端全绿。
+
+## 保留的功能与边界
+
+以下只读账号套餐、额度、可用重置卡、接口注册及界面能力沿用 v0.3.8，不宣称 v0.3.9 新增真实账号、真实模型或 GUI E2E 验证。
 
 ## 只读套餐与额度
 
@@ -41,19 +52,19 @@
 
 ## 安装与升级
 
-- 安装包：[dsh-model-providers-0.3.8.tgz](<https://github.com/zxbingoo/dsh-model-providers/releases/download/v0.3.8/dsh-model-providers-0.3.8.tgz>)。
-- 校验文件：[dsh-model-providers-0.3.8.sha256](<https://github.com/zxbingoo/dsh-model-providers/releases/download/v0.3.8/dsh-model-providers-0.3.8.sha256>)。
+- 安装包：[dsh-model-providers-0.3.9.tgz](<https://github.com/zxbingoo/dsh-model-providers/releases/download/v0.3.9/dsh-model-providers-0.3.9.tgz>)。
+- 校验文件：[dsh-model-providers-0.3.9.sha256](<https://github.com/zxbingoo/dsh-model-providers/releases/download/v0.3.9/dsh-model-providers-0.3.9.sha256>)。
 
 通过 GitHub Release 分发，无需 npm 或本地构建。下载到同一目录后校验：
 
 ```sh
-shasum -a 256 -c dsh-model-providers-0.3.8.sha256
+shasum -a 256 -c dsh-model-providers-0.3.9.sha256
 ```
 
 校验成功后，在 Harness 插件管理器中选择安装包进行安装或更新。也可添加安装包 URL，或执行以下命令，将 `<profile>` 替换为目标 profile：
 
 ```sh
-dsh plugin --profile <profile> add https://github.com/zxbingoo/dsh-model-providers/releases/download/v0.3.8/dsh-model-providers-0.3.8.tgz
+dsh plugin --profile <profile> add https://github.com/zxbingoo/dsh-model-providers/releases/download/v0.3.9/dsh-model-providers-0.3.9.tgz
 ```
 
 包名 **`dsh-model-providers`**、provider **`codex-cli`**、实例 **`harness-codex-cli-link`** 保持不变。同一 profile 仅启用一份该插件，不要叠加启用本地链接与安装包副本。
@@ -62,7 +73,9 @@ dsh plugin --profile <profile> add https://github.com/zxbingoo/dsh-model-provide
 
 ## 要求与验证范围
 
-- DeepSeek Harness `0.2.1-rc.5`、Codex CLI **0.166.0**、Python **3.11+**。
+- DeepSeek Harness 要求见上述版本范围；本次审查的 npm `latest` 与已安装宿主均为 `0.2.2-rc.1`。Codex CLI **0.166.0**、Python **3.11+** 要求不变。
+- Node **24.21.0** 下隔离 npm 安装 Harness **0.2.2-rc.1** 成功（**656 packages**）；宿主 Schemastery peer **3.19.0** 配置检查及 semver 接纳/拒绝边界通过，源码测试 **177 tests 通过**。
+- 本次已完成真实宿主接口静态审查和实际宿主离线 host transport 回归 **10 项通过**；未发现需改业务 API。仅就该 transport 测试范围，真实账号访问 **0**、CLI 进程启动 **0**（`processStarts=0`）、真实 fetch **0**（`realFetches=0`）；这些计数不描述 npm 安装或其他测试的网络/进程行为。该证据不代表全部未来版本、真实账号、真实模型或 GUI E2E 已验证。
 - mock RPC、假 CLI 与 React/jsdom 测试覆盖只读 RPC 顺序、账号配对、缺失值、owner 权限、取消、并发及前端交互，不连接真实账号。
 - CLI 隔离测试使用真实 Codex CLI、合成配置与本地假上游，不使用真实凭据或付费模型请求；额度隔离测试不执行登录、模型 turn 或重置卡消费。
 - 实际宿主离线回归使用实际 Harness Cordis、Connection、WebServer 与浏览器 RPC 实现，覆盖启动顺序、显式路由所有者、卸载重挂与通信契约；服务和响应为合成数据，不启动真实服务、不访问账号、不运行 CLI。

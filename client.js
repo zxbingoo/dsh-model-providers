@@ -345,7 +345,7 @@ window.__ModuleLoader__.load({
         function Panel() {
           return h('section', { className: 'hccl', 'aria-label': 'Providers 配置' }, h('style', null, css + usageCss),
             h('div', { className: 'hccl-wrap' },
-              h('header', { className: 'hccl-header' }, h('h1', null, 'Providers'), h('p', null, '管理模型提供商及其默认配置。'), h('span', { className: 'hccl-version' }, 'v0.3.8')),
+              h('header', { className: 'hccl-header' }, h('h1', null, 'Providers'), h('p', null, '管理模型提供商及其默认配置。'), h('span', { className: 'hccl-version' }, 'v0.3.9')),
               ...PROVIDERS.map(provider => h(configurationComponents[provider.component], { key: provider.id, provider })),
               h('p', { className: 'hccl-footer' }, '模型更改将在下一次请求生效。当前任务执行期间请勿切换模型。')));
         }
