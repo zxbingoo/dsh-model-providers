@@ -77,6 +77,11 @@ export function createRuntime({
         const catalog = constructIsolatedCatalog(await executionCatalog(), model, metadata);
         await fs.writeFile(catalogPath, JSON.stringify(catalog), { mode: 0o600 });
         args = buildIsolationArgs({ catalogPath, structure });
+        // Pin the selected metadata snapshot, so a later config edit cannot make
+        // execution silently diverge from the budget Harness already prepared.
+        if (Number.isSafeInteger(metadata?.codexContext?.contextWindow) && metadata.codexContext.contextWindow > 0) {
+          args.push('-c', `model_context_window=${metadata.codexContext.contextWindow}`);
+        }
       }
       return { binary, cwd: root, args, cleanup };
     } catch (error) {
@@ -125,6 +130,7 @@ export function createRuntime({
       try { config = (await rpc.call('config/read', { includeLayers: false }))?.config; }
       catch { /* Optional metadata cannot make the model catalog unavailable. */ }
       try {
+        if (!config || typeof config !== 'object' || Array.isArray(config)) throw new Error('Effective model configuration unavailable');
         const catalog = await readModelCatalog({ binary: isolation.binary, cwd: isolation.cwd, env, args: isolation.args });
         for (const [id, context] of nativeModelContexts(catalog, config)) {
           const model = models.get(id);
