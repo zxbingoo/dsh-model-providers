@@ -7,6 +7,7 @@ function fixture(pages) {
   const calls = []; let closed = 0, cleaned = 0;
   const runtime = createRuntime({ env: { CODEX_HOME: '/test-home' }, assertVersion: () => {}, tempDir: () => '/tmp',
     fs: { stat: async () => { throw enoent(); }, realpath: async p => p, mkdtemp: async () => '/tmp/dsh-codex-bridge-test', rm: async () => { cleaned++; } },
+    readModelCatalog: async () => ({ models: [] }),
     rpcFactory: options => { assert(!options.args.some(a => a.startsWith('model_catalog_json='))); return {
       initialize: async () => {}, close: () => { closed++; }, call: async (method, params) => { calls.push({ method, params }); const value = pages.shift(); if (value instanceof Error) throw value; return value; }
     }; }, loadCatalog: () => { throw Error('Discovery must never load bundled catalog'); }
@@ -17,7 +18,7 @@ test('native discovery preserves reported capabilities across pagination without
   const f = fixture([{ data: [{ model: 'vision', inputModalities: ['text', 'image'] }, { model: 'unknown' }], nextCursor: 'next' }, { data: [{ model: 'text', inputModalities: ['text'] }] }]);
   const models = await f.runtime.discoverModels();
   assert.deepEqual(models[0].inputModalities, ['text','image']); assert.equal(models[1].inputModalities, undefined);
-  assert.deepEqual(models[2].inputModalities, ['text']); assert(f.calls.every(c => c.method === 'model/list'));
+  assert.deepEqual(models[2].inputModalities, ['text']); assert.deepEqual(f.calls.map(c => c.method), ['model/list', 'model/list', 'config/read']);
   assert.equal(f.calls[1].params.cursor, 'next'); assert.equal(f.closed, 1); assert.equal(f.cleaned, 1);
 });
 test('failed discovery cleans resources and repeated cursors are rejected', async () => {

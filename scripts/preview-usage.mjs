@@ -75,6 +75,11 @@ async function renderScenario(scenario) {
       },
     },
     connection: { rpc: { call: async (path, method, payload, signal) => {
+      if (method === 'status') {
+        assert.equal(path, '/harness-codex-cli-link');
+        assert.equal(JSON.stringify(payload), '{"refresh":false}');
+        return ok({ namespace: 'harness-codex-cli-link', models: [{ id: 'gpt-6.1-sol', context: { contextWindow: 475000 }, contextSource: 'codex-native-catalog' }] });
+      }
       ++accountCalls;
       assert.equal(path, '/harness-codex-cli-link'); assert.equal(method, 'accountUsage');
       assert.equal(JSON.stringify(payload), '{}'); assert(signal instanceof AbortSignal);

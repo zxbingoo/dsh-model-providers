@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { currentConfig, resolveOptions, modelChoices, migrateDefaultSelection, createModelDirectory } from '../controller.mjs';
 
 test('default configuration and volatile reference reads are live', () => {
-  assert.deepEqual(currentConfig(), { enabled: true, model: 'gpt-6.1-sol', reasoningEffort: 'default' });
+  assert.deepEqual(currentConfig(), { enabled: true, model: 'gpt-6.1-sol', reasoningEffort: 'default', contextWindows: {} });
   let value = 'first'; const config = { model: { get: () => value } };
   assert.equal(currentConfig(config).model, 'first'); value = 'second';
   assert.equal(currentConfig(config).model, 'second');

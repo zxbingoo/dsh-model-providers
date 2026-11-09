@@ -77,6 +77,18 @@ window.__ModuleLoader__.load({
       if (message === `${prefix}401` || message === `${prefix}403`) return 'forbidden';
       return 'connectionError';
     }
+    const positiveCapacity = value => Number.isSafeInteger(value) && value > 0;
+    function readContextMetadata(result) {
+      // The host catalog can strip extension metadata; only the directory RPC
+      // supplies automatic capacities. Never reuse settings-applied overrides.
+      if (!isUsageRecord(result) || !Object.hasOwn(result, 'ok') || result.ok !== true ||
+          !Object.hasOwn(result, 'value') || !isUsageRecord(result.value) ||
+          result.value.namespace !== PANEL || !Object.hasOwn(result.value, 'models') || !Array.isArray(result.value.models)) return null;
+      return result.value.models.filter(model => isUsageRecord(model) &&
+        Object.hasOwn(model, 'id') && typeof model.id === 'string' &&
+        model.contextSource === 'codex-native-catalog' && isUsageRecord(model.context) &&
+        positiveCapacity(model.context.contextWindow)).map(model => ({ id: model.id, capacity: model.context.contextWindow }));
+    }
     const textOrUnknown = value => typeof value === 'string' && value.trim() ? value : '未提供';
     const countOrUnknown = value => typeof value === 'string' && /^\d+$/.test(value) ? value : '未提供';
     function planLabel(value) {
@@ -229,6 +241,8 @@ window.__ModuleLoader__.load({
           const [defaults, setDefaults] = React.useState(null);
           const [form, setForm] = React.useState({ enabled: true, model: 'gpt-6.1-sol', reasoningEffort: 'default' });
           const [models, setModels] = React.useState([]);
+          const [contextMetadata, setContextMetadata] = React.useState([]);
+          const [contextState, setContextState] = React.useState('idle');
           const [busy, setBusy] = React.useState(false);
           const [checking, setChecking] = React.useState(false);
           const [connected, setConnected] = React.useState(false);
@@ -238,6 +252,7 @@ window.__ModuleLoader__.load({
           const dirty = React.useRef(false);
           const ns = React.useRef(PANEL);
           const generation = React.useRef(0);
+          const catalogGeneration = React.useRef(0);
           async function loadSettings() {
             const epoch = ++generation.current;
             const doc = unwrap(await ctx.remote.settings.describe());
@@ -245,28 +260,47 @@ window.__ModuleLoader__.load({
             if (!entry) throw new Error('未找到提供商配置，请重启 Harness 后重试。');
             if (!live.current || epoch !== generation.current) return;
             setDefaults(doc.namespaces.find(x => x.ns === 'agent-default-model') ?? null);
-            if (!dirty.current) { setRow(entry); setForm({ enabled: entry.value.enabled, model: entry.value.model, reasoningEffort: entry.value.reasoningEffort }); }
+            if (!dirty.current) {
+              setRow(entry);
+              setForm({ enabled: entry.value.enabled, model: entry.value.model, reasoningEffort: entry.value.reasoningEffort,
+                // Preserve legacy configuration verbatim on unrelated saves, but never edit or display it.
+                ...(Object.hasOwn(entry.value, 'contextWindows') ? { contextWindows: entry.value.contextWindows } : {}) });
+            }
           }
           async function check() {
+            const epoch = ++catalogGeneration.current;
+            const current = () => live.current && epoch === catalogGeneration.current;
             setChecking(true); setError('');
+            setContextMetadata([]); setContextState('loading');
             try {
               // Keep the existing native model-catalog path independent of account usage RPC.
               const catalog = unwrap(await ctx.remote.session.modelCatalog());
-              if (!live.current) return;
+              if (!current()) return;
               const group = catalog.groups.find(g => g.id === provider.id);
               const list = (group?.models ?? []).filter(m => m.id !== 'configured');
               setModels(list); setConnected(list.length > 0);
+              // modelCatalog already refreshed the native directory. Read its full
+              // metadata once, without another CLI discovery or account query.
+              try {
+                const result = await ctx.connection.rpc.call(`/${PANEL}`, 'status', { refresh: false });
+                if (!current()) return;
+                const metadata = readContextMetadata(result);
+                setContextMetadata(metadata ?? []); setContextState(metadata === null ? 'failed' : 'ready');
+              } catch {
+                if (!current()) return;
+                setContextMetadata([]); setContextState('failed');
+              }
               await loadSettings();
               if (!list.length) setNotice('模型目录为空：若 Codex 已停用，请先启用并保存，再刷新模型。');
-            } catch (e) { if (live.current) { setConnected(false); setError(e.message); } }
-            finally { if (live.current) setChecking(false); }
+            } catch (e) { if (current()) { setConnected(false); setContextMetadata([]); setContextState('failed'); setError(e.message); } }
+            finally { if (current()) setChecking(false); }
           }
           React.useEffect(() => {
             live.current = true;
             loadSettings().catch(e => { if (live.current) setError(e.message); });
             check();
             const stop = ctx.remote?.$on?.('settings/document-updated', () => { if (!dirty.current) loadSettings().catch(() => {}); });
-            return () => { live.current = false; stop?.(); };
+            return () => { live.current = false; ++catalogGeneration.current; stop?.(); };
           }, []);
           function change(key, value) { dirty.current = true; setNotice(''); setForm(old => ({ ...old, [key]: value, ...(key === 'model' ? { reasoningEffort: 'default' } : {}) })); }
           async function save() {
@@ -310,6 +344,10 @@ window.__ModuleLoader__.load({
             onClick: () => setActiveTab(key), onKeyDown: event => tabKeyDown(event, key),
           }, label);
           const known = models.some(m => m.id === form.model);
+          const capacity = contextMetadata.find(model => model.id === form.model)?.capacity;
+          const capacityLabel = contextState === 'loading' || contextState === 'idle' ? '读取中…' :
+            contextState === 'failed' ? '读取失败，请刷新模型' :
+            positiveCapacity(capacity) ? `${new Intl.NumberFormat('en-US').format(capacity)} tokens` : '未提供';
           const status = checking ? '检查中' : !row ? '加载中' : !form.enabled ? '已停用' : connected ? '可用' : '待检查';
           const field = (id, title, description, control) => h('div', { className: 'hccl-setting' },
             h('div', null, h('label', { className: 'hccl-label', htmlFor: id }, title), h('small', null, description)), control);
@@ -331,6 +369,9 @@ window.__ModuleLoader__.load({
                 field('hccl-model', '默认模型', '未指定模型时使用；会话中手动选择的模型优先。',
                   h('div', null, h('select', { id: 'hccl-model', value: form.model, disabled: busy || !row, onChange: e => change('model', e.target.value) }, !known && h('option', { value: form.model }, form.model), ...models.map(m => h('option', { key: m.id, value: m.id }, m.name || m.id))),
                     h('details', { className: 'hccl-advanced' }, h('summary', null, '自定义模型 ID'), h('input', { id: 'hccl-custom-model', 'aria-label': '自定义模型 ID', type: 'text', value: form.model, maxLength: 200, disabled: busy || !row, onChange: e => change('model', e.target.value), placeholder: '输入上游模型 ID' })))),
+                h('div', { className: 'hccl-setting' },
+                  h('span', { className: 'hccl-label' }, '上下文容量'),
+                  h('span', { id: 'hccl-context-capacity', 'aria-live': 'polite' }, capacityLabel)),
                 field('hccl-effort', '推理强度', '会话中的显式设置优先于此默认值。',
                   h('select', { id: 'hccl-effort', value: form.reasoningEffort, disabled: busy || !row, onChange: e => change('reasoningEffort', e.target.value) }, ...[['default', '跟随 CLI 默认'], ...(models.find(m => m.id === form.model)?.reasoning?.efforts?.map(e => [e.id, e.name || e.id]) ?? [['none', '无'], ['minimal', '最低'], ['low', '低'], ['medium', '中'], ['high', '高'], ['xhigh', '最高'], ['max', 'Max'], ['ultra', 'Ultra']])].map(([id, label]) => h('option', { key: id, value: id }, label)))),
                 h('div', { className: 'hccl-actions' },
@@ -346,8 +387,7 @@ window.__ModuleLoader__.load({
           return h('section', { className: 'hccl', 'aria-label': 'Providers 配置' }, h('style', null, css + usageCss),
             h('div', { className: 'hccl-wrap' },
               h('header', { className: 'hccl-header' }, h('h1', null, 'Providers'), h('p', null, '管理模型提供商及其默认配置。'), h('span', { className: 'hccl-version' }, 'v0.3.9')),
-              ...PROVIDERS.map(provider => h(configurationComponents[provider.component], { key: provider.id, provider })),
-              h('p', { className: 'hccl-footer' }, '模型更改将在下一次请求生效。当前任务执行期间请勿切换模型。')));
+              ...PROVIDERS.map(provider => h(configurationComponents[provider.component], { key: provider.id, provider }))));
         }
         ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: PANEL }, Panel));
         ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id: PANEL, order: 15, label: 'Providers' }, Icon));

@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { tmpdir, homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { CodexRpc } from './rpc.mjs';
+import { readNativeModelCatalog, nativeModelContexts } from './model-context.mjs';
 import { accountSummary, usageSummary, usageSnapshot } from './account-usage.mjs';
 import { CODEX_VERSION, assertCodexVersion, readConfigStructure, constructIsolatedCatalog, buildIsolationArgs, buildDiscoveryArgs } from './isolation/isolation.mjs';
 
@@ -38,7 +39,7 @@ function discoveredModel(value) {
 export function createRuntime({
   fs: fsOverrides = {}, env = process.env, homeDir = homedir, tempDir = tmpdir,
   assertVersion = assertCodexVersion, readStructure = readConfigStructure,
-  loadCatalog, rpcFactory = options => new CodexRpc(options),
+  loadCatalog, readModelCatalog = readNativeModelCatalog, rpcFactory = options => new CodexRpc(options),
 } = {}) {
   const fs = { ...nodeFs, ...fsOverrides };
   const executionCatalog = loadCatalog ?? (async () => JSON.parse(await fs.readFile(new URL('./isolation/models.json', import.meta.url), 'utf8')));
@@ -117,6 +118,19 @@ export function createRuntime({
         if (!nonemptyString(cursor) || seenCursors.has(cursor)) throw new Error('Invalid or repeated Codex model/list cursor');
         seenCursors.add(cursor);
       } while (true);
+      // CLI resolves its own provider/auth-scoped catalog. The raw debug view
+      // can include native bundled/cache fallback: label it as CLI-local metadata,
+      // never upstream-verified capacity, and never read auth/cache files ourselves.
+      let config;
+      try { config = (await rpc.call('config/read', { includeLayers: false }))?.config; }
+      catch { /* Optional metadata cannot make the model catalog unavailable. */ }
+      try {
+        const catalog = await readModelCatalog({ binary: isolation.binary, cwd: isolation.cwd, env, args: isolation.args });
+        for (const [id, context] of nativeModelContexts(catalog, config)) {
+          const model = models.get(id);
+          if (model) Object.assign(model, context);
+        }
+      } catch { /* Capacity remains unknown; an explicit override is still available. */ }
       return [...models.values()];
     } finally {
       try { await rpc?.close(); }
