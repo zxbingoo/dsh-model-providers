@@ -20,7 +20,7 @@ test('sidebar panel reads persistent settings, saves switch/model and sets Harne
       mutate: async (ns, ops, revision) => { const value = Object.fromEntries(ops.filter(op => op.op === 'set').map(op => [op.path[0], op.value])); writes.push({ ns, value, revision }); defaults = { ns, value, revision: 'd2' }; return { ok: true, value: defaults }; },
       update: async (ns, value, revision) => { writes.push({ ns, value, revision }); const next = { ns, value: { ...(ns === row.ns ? row.value : defaults.value), ...value }, revision: 'r2' }; if (ns === row.ns) row = next; else defaults = next; return { ok: true, value: next }; },
     } },
-    connection: { rpc: { call: async (...args) => { rpcCalls.push(args); return { ok: true, value: { version: 1, state: 'unsupported', account: { type: 'apiKey', email: null, planType: null, workspaceName: null }, usage: null, checkedAt: '2026-11-05T02:00:00Z', message: null } }; } } },
+    connection: { rpc: { call: async (...args) => { if (args[1] === 'status') return { ok: true, value: { namespace: 'harness-codex-cli-link', models: [] } }; assert.equal(args[1], 'accountUsage'); rpcCalls.push(args); return { ok: true, value: { version: 1, state: 'unsupported', account: { type: 'apiKey', email: null, planType: null, workspaceName: null }, usage: null, checkedAt: '2026-11-05T02:00:00Z', message: null } }; } } },
   };
   vm.runInNewContext(await readFile(new URL('../client.js', import.meta.url), 'utf8'), { AbortController, window: { __ModuleLoader__: { load: def => { plugin = def.factory(() => React); } } } });
   assert(plugin.inject.includes('remote'), 'root remote event service must be explicitly injected');

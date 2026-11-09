@@ -73,7 +73,10 @@ async function withPanel(handler, inspect, { strict = false, enabled = true, set
         mutate: async (...args) => { calls.writes.push(args); return ok(defaults); },
       },
     },
-    connection: { rpc: { call: async (...args) => { calls.accounts.push(args); return handler(...args); } } },
+    connection: { rpc: { call: async (...args) => {
+      if (args[1] === 'status') return ok({ namespace: 'harness-codex-cli-link', models: [] });
+      assert.equal(args[1], 'accountUsage'); calls.accounts.push(args); return handler(...args);
+    } } },
   };
   let plugin;
   vm.runInNewContext(source, {
