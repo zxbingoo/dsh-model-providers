@@ -59,6 +59,7 @@
     "adapter.mjs",
     "rpc.mjs",
     "runtime.mjs",
+    "model-context.mjs",
     "account-usage.mjs",
     "usage-service.mjs",
     "bundle.yml",

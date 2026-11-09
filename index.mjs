@@ -3,7 +3,7 @@ import { CodexRpc } from './rpc.mjs';
 import { prepareIsolation, discoverModels, getDiscoveryFingerprint } from './runtime.mjs';
 import { imageRequestTarget } from './images.mjs';
 import { createUsageService, createUsageHandler } from './usage-service.mjs';
-import { currentConfig, resolveModelId, modelChoices, resolveOptions, migrateDefaultSelection, createModelDirectory } from './controller.mjs';
+import { currentConfig, resolveModelId, modelChoices, resolveOptions, migrateDefaultSelection, createModelDirectory, withModelContext } from './controller.mjs';
 export { Config } from './config.mjs';
 
 export const name = 'dsh-model-providers';
@@ -26,20 +26,22 @@ export function createCodexAdapter(config = {}, {
     const c = currentConfig(config);
     if (!c.enabled) return [];
     const models = await directory(true); adapter.models = models;
-    return modelChoices(models, c).map(m => ({ ...m, provider }));
+    return modelChoices(models, c).map(m => ({ ...withModelContext(m, m.id, c), provider }));
   };
-  adapter.resolveModel = async (provider, model) => {
+  adapter.resolveModel = async (provider, model, signal) => {
+    signal?.throwIfAborted();
     const c = currentConfig(config);
     const actual = resolveModelId(model, c);
     const metadata = c.enabled ? (await directory()).find(m => m.id === actual) : undefined;
-    // Retain a legacy requested ID for replay, but label it with the real model.
-    return { ...metadata, provider, id: model?.trim() ? model : actual, name: metadata?.name ?? actual };
+    signal?.throwIfAborted();
+    // Retain a legacy requested ID for replay, but resolve its capacity by actual ID.
+    return { ...withModelContext(metadata, actual, c), provider, id: model?.trim() ? model : actual, name: metadata?.name ?? actual };
   };
   adapter.prepareCall = async (provider, model, signal) => {
     signal?.throwIfAborted();
     const snapshot = currentConfig(config);
     const resolved = resolveOptions({ model }, snapshot);
-    const metadata = structuredClone((await directory()).find(m => m.id === resolved.model));
+    const metadata = withModelContext(structuredClone((await directory()).find(m => m.id === resolved.model)), resolved.model, snapshot);
     signal?.throwIfAborted();
     return { model: { ...metadata, provider, id: model?.trim() ? model : resolved.model, name: metadata?.name ?? resolved.model },
       stream: async function* (options) {

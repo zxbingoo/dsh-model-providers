@@ -1,9 +1,19 @@
 export const CONFIGURED_MODEL = 'configured';
-export const DEFAULTS = { enabled: true, model: 'gpt-6.1-sol', reasoningEffort: 'default' };
+export const DEFAULTS = { enabled: true, model: 'gpt-6.1-sol', reasoningEffort: 'default', contextWindows: {} };
 export const EFFORTS = ['default', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'];
 export function currentConfig(config = {}) {
   const get = (key) => typeof config[key]?.get === 'function' ? config[key].get() : config[key] ?? DEFAULTS[key];
-  return { enabled: get('enabled'), model: get('model'), reasoningEffort: get('reasoningEffort') };
+  return { enabled: get('enabled'), model: get('model'), reasoningEffort: get('reasoningEffort'), contextWindows: normalizeContextWindows(get('contextWindows')) };
+}
+export function normalizeContextWindows(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return Object.fromEntries(Object.entries(value).filter(([id, capacity]) =>
+    id.trim() && id.length <= 200 && Number.isSafeInteger(capacity) && capacity > 0));
+}
+// Capacity comes only from the CLI-native discovery snapshot. Historical manual
+// settings are preserved for lossless unrelated saves, but no longer applied.
+export function withModelContext(metadata) {
+  return structuredClone(metadata ?? {});
 }
 // `configured` is a legacy stored route only, never a model-picker choice.
 export const usesDefaultModel = model => model == null || model === CONFIGURED_MODEL || (typeof model === 'string' && !model.trim());
