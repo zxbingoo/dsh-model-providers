@@ -27,13 +27,17 @@ export function nativeModelContexts(catalog, config) {
   for (const item of catalog.models) {
     if (typeof item?.slug !== 'string' || !item.slug.trim()) continue;
     let capacity = positive(item.context_window) ? item.context_window : positive(item.max_context_window) ? item.max_context_window : undefined;
-    if (config?.model === item.slug && positive(config.model_context_window)) {
+    if (positive(config?.model_context_window)) {
       capacity = positive(item.max_context_window) ? Math.min(config.model_context_window, item.max_context_window) : config.model_context_window;
     }
     const percent = item.effective_context_window_percent === undefined ? 95 : item.effective_context_window_percent;
     if (!positive(capacity) || !Number.isInteger(percent) || percent <= 0 || percent > 100) continue;
-    const usable = Math.floor(capacity * (percent / 100));
-    if (positive(usable)) contexts.set(item.slug, { context: { contextWindow: usable }, contextSource: 'codex-native-catalog' });
+    // Integer math matches the CLI's i64 multiply/divide, without float rounding.
+    const usable = Number(BigInt(capacity) * BigInt(percent) / 100n);
+    if (positive(usable)) contexts.set(item.slug, {
+      context: { contextWindow: usable }, contextSource: 'codex-native-catalog',
+      codexContext: { contextWindow: capacity, maxContextWindow: positive(item.max_context_window) ? item.max_context_window : null, effectivePercent: percent },
+    });
   }
   return contexts;
 }

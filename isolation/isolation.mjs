@@ -34,6 +34,16 @@ export function constructIsolatedCatalog(publicCatalog, model, metadata) {
     ? [...new Set(metadata.inputModalities.filter(value => NATIVE_INPUT_MODALITIES.has(value)))]
     : ['text', 'image'];
   const efforts = Array.isArray(metadata?.reasoning?.efforts) ? metadata.reasoning.efforts : [];
+  // Keep execution's CLI budget identical to the native discovery snapshot used
+  // by Harness compaction. Never leave a different model template's window here.
+  const capacity = metadata?.codexContext;
+  if (capacity && Number.isSafeInteger(capacity.contextWindow) && capacity.contextWindow > 0 &&
+      (capacity.maxContextWindow === null || Number.isSafeInteger(capacity.maxContextWindow) && capacity.maxContextWindow > 0) &&
+      Number.isInteger(capacity.effectivePercent) && capacity.effectivePercent > 0 && capacity.effectivePercent <= 100) {
+    entry.context_window = capacity.contextWindow;
+    entry.max_context_window = capacity.maxContextWindow;
+    entry.effective_context_window_percent = capacity.effectivePercent;
+  }
   Object.assign(entry, {
     slug: model, display_name: model, shell_type: 'disabled', apply_patch_tool_type: null,
     experimental_supported_tools: [], supports_search_tool: false, tool_mode: 'direct',

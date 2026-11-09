@@ -20,7 +20,7 @@ async function withPanel(contextWindows, inspect, options = {}) {
   let row = { ns: 'harness-codex-cli-link', revision: 'r1', value: {
     enabled: true, model: 'Exact-A', reasoningEffort: 'default', ...(contextWindows === undefined ? {} : { contextWindows }),
   } };
-  const calls = { writes: [], catalog: 0, accounts: 0, status: [], describe: 0 };
+  const calls = { writes: [], catalog: 0, accounts: 0, status: [], signals: [], describe: 0 };
   const ctx = {
     slots: { inject: (_name, fn) => fn(), register: (options, component) => { if (options.name === 'main') Panel = component; } },
     remote: {
@@ -39,10 +39,10 @@ async function withPanel(contextWindows, inspect, options = {}) {
         },
       },
     },
-    connection: { rpc: { call: async (path, method, payload) => {
+    connection: { rpc: { call: async (path, method, payload, signal) => {
       assert.equal(path, '/harness-codex-cli-link');
       if (method === 'accountUsage') { ++calls.accounts; return ok({ version: 1, state: 'unsupported' }); }
-      assert.equal(method, 'status'); calls.status.push(plain(payload));
+      assert.equal(method, 'status'); calls.status.push(plain(payload)); calls.signals.push(signal);
       return options.status ? options.status(calls.status.length) : directory([model('Exact-A', 475000), model('Model-B', 200000)]);
     } } },
   };
@@ -94,7 +94,7 @@ test('capacity is one plain read-only setting, sourced only from the automatic d
   });
 });
 
-test('selection uses exact IDs and never requests metadata or accounts or writes settings', async () => {
+test('selection refreshes status for exact IDs without catalog, account queries or writes', async () => {
   await withPanel(undefined, async ({ capacity, select, click, calls }) => {
     await select('Model-B'); assert.equal(capacity(), '200,000 tokens');
     await select('exact-a'); assert.equal(capacity(), '未提供');
@@ -103,8 +103,40 @@ test('selection uses exact IDs and never requests metadata or accounts or writes
     await click(document.getElementById('hccl-codex-tab-settings'));
     document.querySelector('[aria-label="刷新模型"]').dispatchEvent(new window.Event('mouseover', { bubbles: true }));
     assert.equal(calls.catalog, 1); assert.equal(calls.accounts, 1);
-    assert.deepEqual(calls.status, [{ refresh: false }]); assert.equal(calls.writes.length, 0);
+    assert.deepEqual(calls.status, [{ refresh: false }, { refresh: true }, { refresh: true }, { refresh: true }]); assert.equal(calls.writes.length, 0);
   });
+});
+
+test('same ID, effort and enabled changes never refresh capacity or account usage', async () => {
+  await withPanel(undefined, async ({ capacity, select, calls, click }) => {
+    await select('Exact-A');
+    await act(async () => {
+      const effort = document.getElementById('hccl-effort');
+      effort.value = 'high'; effort.dispatchEvent(new window.Event('change', { bubbles: true }));
+    });
+    await click(document.querySelector('[role="switch"]'));
+    await select('Model-B');
+    await select('Model-B');
+    await act(async () => document.getElementById('hccl-custom-model').dispatchEvent(new window.FocusEvent('focusout', { bubbles: true })));
+    assert.equal(capacity(), '200,000 tokens');
+    assert.deepEqual(calls.status, [{ refresh: false }, { refresh: true }]);
+    assert.equal(calls.catalog, 1); assert.equal(calls.accounts, 1); assert.equal(calls.writes.length, 0);
+  });
+});
+
+test('selection failure discards old capacities and raw errors while preserving the dirty form', async () => {
+  for (const failure of [() => { throw new Error('secret-selection-error'); }, () => ({ ok: false, error: { message: 'secret-selection-error' } })]) {
+    await withPanel(undefined, async ({ capacity, select, calls, save }) => {
+      await select('Model-B');
+      assert.equal(capacity(), '读取失败，请刷新模型');
+      assert.equal(document.getElementById('hccl-model').value, 'Model-B');
+      assert.equal(save().disabled, false);
+      assert.doesNotMatch(document.body.textContent, /secret-selection-error|475,000|200,000/);
+      await select('Model-B');
+      assert.deepEqual(calls.status, [{ refresh: false }, { refresh: true }]);
+      assert.equal(calls.catalog, 1); assert.equal(calls.accounts, 1); assert.equal(calls.writes.length, 0);
+    }, { status: count => count === 1 ? directory([model('Exact-A', 475000), model('Model-B', 200000)]) : failure() });
+  }
 });
 
 test('unrelated saves preserve legacy context map verbatim without creating one, including dirty tab and refresh changes', async () => {
@@ -126,24 +158,31 @@ test('unrelated saves preserve legacy context map verbatim without creating one,
         enabled: true, model: 'Model-B', reasoningEffort: 'default', ...(map === undefined ? {} : { contextWindows: map }),
       } }]);
       assert.equal(save().disabled, true); assert.equal(calls.accounts, 1);
-      assert.deepEqual(calls.status, [{ refresh: false }, { refresh: false }]);
+      assert.deepEqual(calls.status, [{ refresh: false }, { refresh: true }, { refresh: false }]);
     });
   }
 });
 
-test('refresh clears old capacity immediately, shows loading, and resolves for the newly selected exact model', async () => {
-  let resolve;
-  await withPanel(undefined, async ({ capacity, select, click, calls }) => {
+test('model switches clear capacity and ignore late responses from selections and refresh buttons', async () => {
+  const pending = [];
+  await withPanel(undefined, async ({ capacity, select, click, calls, save }) => {
     assert.equal(capacity(), '475,000 tokens');
     await click(document.querySelector('[aria-label="刷新模型"]'));
     assert.equal(capacity(), '读取中…');
     await select('Model-B'); assert.equal(capacity(), '读取中…');
-    await act(async () => resolve(directory([model('Exact-A', 500000), model('Model-B', 250000)])));
-    assert.equal(capacity(), '250,000 tokens');
-    await select('Exact-A'); assert.equal(capacity(), '500,000 tokens');
-    assert.equal(calls.accounts, 1); assert.equal(calls.writes.length, 0);
-    assert.deepEqual(calls.status, [{ refresh: false }, { refresh: false }]);
-  }, { status: count => count === 1 ? directory([model('Exact-A', 475000)]) : new Promise(done => { resolve = done; }) });
+    assert.equal(calls.signals[1].aborted, true);
+    await select('Exact-A'); assert.equal(capacity(), '读取中…');
+    assert.equal(calls.signals[2].aborted, true);
+    await act(async () => pending[2](directory([model('Exact-A', 600000), model('Model-B', 1)])));
+    assert.equal(capacity(), '600,000 tokens');
+    await act(async () => {
+      pending[1](directory([model('Exact-A', 2), model('Model-B', 250000)]));
+      pending[0](directory([model('Exact-A', 3)]));
+    });
+    assert.equal(capacity(), '600,000 tokens'); assert.equal(save().disabled, false);
+    assert.equal(calls.accounts, 1); assert.equal(calls.writes.length, 0); assert.equal(calls.catalog, 2);
+    assert.deepEqual(calls.status, [{ refresh: false }, { refresh: false }, { refresh: true }, { refresh: true }]);
+  }, { status: count => count === 1 ? directory([model('Exact-A', 475000)]) : new Promise(done => { pending.push(done); }) });
 });
 
 test('metadata refresh failure clears old capacity without failing the native connection or leaking errors', async () => {
@@ -193,6 +232,7 @@ test('late directory response after unmount is ignored', async () => {
     await click(document.querySelector('[aria-label="刷新模型"]'));
     assert.equal(capacity(), '读取中…');
     await unmount();
+    assert.equal(calls.signals[1].aborted, true);
     await act(async () => resolve(directory([model('Exact-A', 1)])));
     assert.equal(document.getElementById('hccl-context-capacity'), null);
     assert.equal(calls.writes.length, 0); assert.equal(calls.accounts, 1);

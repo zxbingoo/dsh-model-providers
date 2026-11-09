@@ -253,6 +253,35 @@ window.__ModuleLoader__.load({
           const ns = React.useRef(PANEL);
           const generation = React.useRef(0);
           const catalogGeneration = React.useRef(0);
+          const contextGeneration = React.useRef(0);
+          const contextRequest = React.useRef(null);
+          const selectedModel = React.useRef(null);
+          const queriedModel = React.useRef(null);
+          function clearContext() {
+            ++contextGeneration.current;
+            contextRequest.current?.abort(); contextRequest.current = null;
+            setContextMetadata([]); setContextState('loading');
+          }
+          async function refreshContext(refresh, modelId = selectedModel.current) {
+            clearContext();
+            const epoch = contextGeneration.current;
+            const controller = new AbortController();
+            contextRequest.current = controller;
+            queriedModel.current = modelId;
+            const current = () => live.current && epoch === contextGeneration.current && !controller.signal.aborted;
+            try {
+              const result = await ctx.connection.rpc.call(`/${PANEL}`, 'status', { refresh }, controller.signal);
+              if (!current()) return;
+              const metadata = readContextMetadata(result);
+              // A response belongs only to the exact model requested, never a later selection.
+              setContextMetadata((metadata ?? []).filter(model => model.id === modelId));
+              setContextState(metadata === null ? 'failed' : 'ready');
+            } catch {
+              if (current()) { setContextMetadata([]); setContextState('failed'); }
+            } finally {
+              if (current()) contextRequest.current = null;
+            }
+          }
           async function loadSettings() {
             const epoch = ++generation.current;
             const doc = unwrap(await ctx.remote.settings.describe());
@@ -262,6 +291,8 @@ window.__ModuleLoader__.load({
             setDefaults(doc.namespaces.find(x => x.ns === 'agent-default-model') ?? null);
             if (!dirty.current) {
               setRow(entry);
+              selectedModel.current = entry.value.model;
+              queriedModel.current = entry.value.model;
               setForm({ enabled: entry.value.enabled, model: entry.value.model, reasoningEffort: entry.value.reasoningEffort,
                 // Preserve legacy configuration verbatim on unrelated saves, but never edit or display it.
                 ...(Object.hasOwn(entry.value, 'contextWindows') ? { contextWindows: entry.value.contextWindows } : {}) });
@@ -271,7 +302,8 @@ window.__ModuleLoader__.load({
             const epoch = ++catalogGeneration.current;
             const current = () => live.current && epoch === catalogGeneration.current;
             setChecking(true); setError('');
-            setContextMetadata([]); setContextState('loading');
+            clearContext();
+            const contextEpoch = contextGeneration.current;
             try {
               // Keep the existing native model-catalog path independent of account usage RPC.
               const catalog = unwrap(await ctx.remote.session.modelCatalog());
@@ -281,18 +313,11 @@ window.__ModuleLoader__.load({
               setModels(list); setConnected(list.length > 0);
               // modelCatalog already refreshed the native directory. Read its full
               // metadata once, without another CLI discovery or account query.
-              try {
-                const result = await ctx.connection.rpc.call(`/${PANEL}`, 'status', { refresh: false });
-                if (!current()) return;
-                const metadata = readContextMetadata(result);
-                setContextMetadata(metadata ?? []); setContextState(metadata === null ? 'failed' : 'ready');
-              } catch {
-                if (!current()) return;
-                setContextMetadata([]); setContextState('failed');
-              }
               await loadSettings();
+              if (!current()) return;
+              if (contextEpoch === contextGeneration.current) await refreshContext(false);
               if (!list.length) setNotice('模型目录为空：若 Codex 已停用，请先启用并保存，再刷新模型。');
-            } catch (e) { if (current()) { setConnected(false); setContextMetadata([]); setContextState('failed'); setError(e.message); } }
+            } catch (e) { if (current()) { setConnected(false); if (contextEpoch === contextGeneration.current) { setContextMetadata([]); setContextState('failed'); } setError(e.message); } }
             finally { if (current()) setChecking(false); }
           }
           React.useEffect(() => {
@@ -300,9 +325,22 @@ window.__ModuleLoader__.load({
             loadSettings().catch(e => { if (live.current) setError(e.message); });
             check();
             const stop = ctx.remote?.$on?.('settings/document-updated', () => { if (!dirty.current) loadSettings().catch(() => {}); });
-            return () => { live.current = false; ++catalogGeneration.current; stop?.(); };
+            return () => {
+              live.current = false; ++generation.current; ++catalogGeneration.current; ++contextGeneration.current;
+              contextRequest.current?.abort(); contextRequest.current = null; stop?.();
+            };
           }, []);
           function change(key, value) { dirty.current = true; setNotice(''); setForm(old => ({ ...old, [key]: value, ...(key === 'model' ? { reasoningEffort: 'default' } : {}) })); }
+          function changeModel(value, commit) {
+            if (value !== selectedModel.current) {
+              selectedModel.current = value;
+              queriedModel.current = null;
+              change('model', value);
+              // Custom typing invalidates pending data immediately, but queries only on blur.
+              clearContext();
+            }
+            if (commit && value !== queriedModel.current) refreshContext(true, value);
+          }
           async function save() {
             ++generation.current;
             setBusy(true); setError(''); setNotice('');
@@ -367,8 +405,8 @@ window.__ModuleLoader__.load({
               h('div', { className: 'hccl-body hccl-tabpanel', role: 'tabpanel', id: 'hccl-codex-settings', 'aria-labelledby': 'hccl-codex-tab-settings', tabIndex: 0, hidden: activeTab !== 'settings' },
                 h('div', { className: 'hccl-model-head' }, h('h3', null, '模型与行为'), h(RefreshButton, { label: '刷新模型', busy: checking, onClick: check })),
                 field('hccl-model', '默认模型', '未指定模型时使用；会话中手动选择的模型优先。',
-                  h('div', null, h('select', { id: 'hccl-model', value: form.model, disabled: busy || !row, onChange: e => change('model', e.target.value) }, !known && h('option', { value: form.model }, form.model), ...models.map(m => h('option', { key: m.id, value: m.id }, m.name || m.id))),
-                    h('details', { className: 'hccl-advanced' }, h('summary', null, '自定义模型 ID'), h('input', { id: 'hccl-custom-model', 'aria-label': '自定义模型 ID', type: 'text', value: form.model, maxLength: 200, disabled: busy || !row, onChange: e => change('model', e.target.value), placeholder: '输入上游模型 ID' })))),
+                  h('div', null, h('select', { id: 'hccl-model', value: form.model, disabled: busy || !row, onChange: e => changeModel(e.target.value, true) }, !known && h('option', { value: form.model }, form.model), ...models.map(m => h('option', { key: m.id, value: m.id }, m.name || m.id))),
+                    h('details', { className: 'hccl-advanced' }, h('summary', null, '自定义模型 ID'), h('input', { id: 'hccl-custom-model', 'aria-label': '自定义模型 ID', type: 'text', value: form.model, maxLength: 200, disabled: busy || !row, onChange: e => changeModel(e.target.value, false), onBlur: e => changeModel(e.target.value, true), placeholder: '输入上游模型 ID' })))),
                 h('div', { className: 'hccl-setting' },
                   h('span', { className: 'hccl-label' }, '上下文容量'),
                   h('span', { id: 'hccl-context-capacity', 'aria-live': 'polite' }, capacityLabel)),
